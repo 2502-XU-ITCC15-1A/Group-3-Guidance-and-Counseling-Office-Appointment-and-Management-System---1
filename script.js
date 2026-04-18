@@ -228,11 +228,11 @@ function renderDashboard(role) {
   };
 
   const menusByRole = {
-    student: ["Overview", "Book Appointment", "My Appointments", "Settings"],
-    counselor: ["Calendar", "Requests", "Analytics", "Settings"],
-    admin: ["Overview", "Users", "Schedules", "Appointments", "Reports", "Settings"]
+  student: ["Overview", "My Appointments", "Notifications", "Settings"],
+  counselor: ["Calendar", "Requests", "Analytics", "Settings"],
+  admin: ["Overview", "Users", "Schedules", "Appointments", "Reports", "Settings"]
   };
-
+  
   document.getElementById("roleDashboardLabel").textContent =
     `${role.charAt(0).toUpperCase() + role.slice(1)} Dashboard`;
   const menuNav = document.getElementById("menuNav");
@@ -240,16 +240,53 @@ function renderDashboard(role) {
     state.activeMenu = menusByRole[role][0];
   }
 
-  menusByRole[role].forEach((menu) => {
+menuNav.innerHTML = "";
+
+/* top menus only */
+menusByRole[role]
+  .filter(menu => menu !== "Settings")
+  .forEach((menu) => {
     const btn = document.createElement("button");
     btn.className = `menu-btn ${menu === state.activeMenu ? "active" : ""}`;
     btn.textContent = menu;
+
     btn.onclick = () => {
       state.activeMenu = menu;
       renderDashboard(role);
     };
+
     menuNav.appendChild(btn);
   });
+
+/* spacer pushes bottom buttons */
+const spacer = document.createElement("div");
+spacer.style.flex = "1";
+menuNav.appendChild(spacer);
+
+/* settings button */
+const settingsBtn = document.createElement("button");
+settingsBtn.className = `menu-btn ${state.activeMenu === "Settings" ? "active" : ""}`;
+settingsBtn.textContent = "Settings";
+settingsBtn.onclick = () => {
+  state.activeMenu = "Settings";
+  renderDashboard(role);
+};
+menuNav.appendChild(settingsBtn);
+
+/* logout button */
+const sideLogout = document.createElement("button");
+sideLogout.className = "menu-btn";
+sideLogout.textContent = "Logout";
+sideLogout.onclick = () => {
+  state.currentRole = null;
+  state.activeMenu = null;
+  state.token = null;
+  state.user = null;
+  localStorage.removeItem("gco_token");
+  localStorage.removeItem("gco_user");
+  renderRoleSelect();
+};
+menuNav.appendChild(sideLogout);
 
   renderViewByRole(role, state.activeMenu).catch((err) => {
     const root = document.getElementById("viewRoot");
@@ -270,14 +307,20 @@ async function loadAppointments() {
 }
 
 async function loadCounselors() {
-  state.counselors = await api("/utility/counselors");
+  try {
+    state.counselors = await api("/utility/counselors");
+  } catch (error) {
+    state.counselors = [
+      { id: 1, name: "Default Counselor" }
+    ];
+  }
 }
-
 async function renderStudentView(root, menu) {
  if (menu === "Overview") {
   let currentDate = new Date();
 
   function renderCalendar() {
+    const savedBooking = JSON.parse(localStorage.getItem("studentBooking") || "null");
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
 
@@ -289,9 +332,8 @@ async function renderStudentView(root, menu) {
     const firstDay = new Date(year, month, 1).getDay();
     const totalDays = new Date(year, month + 1, 0).getDate();
 
-    let daysHTML = "";
-
     let start = firstDay === 0 ? 6 : firstDay - 1;
+    let daysHTML = "";
 
     for (let i = 0; i < start; i++) {
       daysHTML += `<div class="empty"></div>`;
@@ -310,6 +352,7 @@ async function renderStudentView(root, menu) {
           <div class="dash-card">
             <div class="card-head">
               <h3>${monthNames[month]} ${year}</h3>
+
               <div class="arrows">
                 <span id="prevMonth">‹</span>
                 <span id="nextMonth">›</span>
@@ -327,20 +370,70 @@ async function renderStudentView(root, menu) {
           </div>
 
           <div class="dash-card appoint-box">
+
             <div class="card-head">
               <div>
                 <h4>Appointments</h4>
-                <p>No appointments</p>
+                <p>${savedBooking ? "1 appointment scheduled" : "No appointments"}</p>
               </div>
-              <button class="book-now">Book now</button>
+
+              <button class="book-now openBooking">Book now</button>
             </div>
 
-            <div class="empty-state">
-              <div class="calendar-icon">📅</div>
-              <small>Start booking for this date</small>
-              <button class="make-btn">Make your appointment</button>
-            </div>
+            ${
+              savedBooking
+                ? `
+                <div class="booked-item">
+                  <div><strong>${savedBooking.time}</strong></div>
+                  <div>${savedBooking.name}</div>
+                  <div>${savedBooking.type}</div>
+                  <button class="view-btn">View</button>
+                </div>
+              `
+                : `
+                <div class="empty-state">
+                  <div class="calendar-icon"></div>
+                  <small>Start booking for this date</small>
+                  <button class="make-btn openBooking">Make your appointment</button>
+                </div>
+              `
+            }
+
           </div>
+        </div>
+      </div>
+
+      <div class="booking-modal hidden" id="bookingModal">
+        <div class="booking-box">
+
+          <div class="modal-top">
+            <h3>New Counseling Appointment</h3>
+            <button id="closeModal">✕</button>
+          </div>
+
+          <form id="bookingForm">
+
+            <input type="text" id="bkName" placeholder="Full Name" required>
+            <input type="email" id="bkEmail" placeholder="Email" required>
+
+            <div class="two-col">
+              <select id="bkType">
+                <option>Mental Health</option>
+                <option>Academic Concern</option>
+                <option>Career Counseling</option>
+              </select>
+
+              <input type="time" id="bkTime" required>
+            </div>
+
+            <textarea id="bkNotes" placeholder="Additional Notes"></textarea>
+
+            <div class="modal-actions">
+              <button type="button" id="closeBtn">Cancel</button>
+              <button type="submit" class="confirm-btn">Confirm Booking</button>
+            </div>
+
+          </form>
 
         </div>
       </div>
@@ -355,138 +448,214 @@ async function renderStudentView(root, menu) {
       currentDate.setMonth(currentDate.getMonth() + 1);
       renderCalendar();
     };
+
+    document.querySelectorAll(".openBooking").forEach(btn => {
+      btn.onclick = () => {
+        document.getElementById("bookingModal").classList.remove("hidden");
+      };
+    });
+
+    document.getElementById("closeModal").onclick = closeModal;
+    document.getElementById("closeBtn").onclick = closeModal;
+
+    function closeModal() {
+      document.getElementById("bookingModal").classList.add("hidden");
+    }
+
+    document.getElementById("bookingForm").onsubmit = (e) => {
+      e.preventDefault();
+
+      const booking = {
+        name: document.getElementById("bkName").value,
+        type: document.getElementById("bkType").value,
+        time: document.getElementById("bkTime").value
+      };
+
+      localStorage.setItem("studentBooking", JSON.stringify(booking));
+      renderCalendar();
+    };
   }
 
   renderCalendar();
+} else if (menu === "Calendar") {
+
+  renderCalendar();
   } else if (menu === "Book Appointment") {
-    await loadCounselors();
-    if (state.counselors.length === 0) {
-      root.innerHTML = `<p class="feedback" style="color:#b91c1c;">No active counselors are available right now. Please contact the office.</p>`;
-      return;
-    }
-    root.innerHTML = `
-      <h2 class="section-title">Book New Appointment</h2>
-      <form id="bookForm" class="grid-2">
-        <label class="field">
-          <span>Counselor</span>
-          <select id="bookCounselor" required>
-            ${state.counselors.map((c) => `<option value="${c.id}">${c.name}</option>`).join("")}
-          </select>
-        </label>
-        <label class="field">
-          <span>Service Type</span>
-          <select id="bookService">
-            <option>Personal Counseling</option>
-            <option>Academic Advising</option>
-            <option>Career Counseling</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Date</span>
-          <input type="date" id="bookDate" required />
-        </label>
-        <label class="field">
-          <span>Time Slot</span>
-          <input type="time" id="bookTime" required />
-        </label>
-        <label class="field" style="grid-column:1/-1;">
-          <span>Reason / Concern</span>
-          <textarea id="bookReason"></textarea>
-        </label>
-        <button class="btn primary" type="submit">Submit Request</button>
-        <button class="btn ghost" type="button" id="clearBookForm">Clear</button>
+
+  root.innerHTML = `
+    <div class="book-page">
+
+      <h1 class="book-title">Book Appointment</h1>
+      <p class="book-sub">Schedule your counseling session easily.</p>
+
+      <form id="bookForm">
+        <div class="book-grid">
+
+          <div class="book-card">
+            <h3>Appointment Details</h3>
+
+            <div class="book-field">
+              <label>Counselor</label>
+              <select id="bookCounselor">
+                <option value="1">Default Counselor</option>
+              </select>
+            </div>
+
+            <div class="book-field">
+              <label>Service Type</label>
+              <select id="bookService">
+                <option>Personal Counseling</option>
+                <option>Academic Advising</option>
+                <option>Career Counseling</option>
+              </select>
+            </div>
+
+            <div class="book-field">
+              <label>Date</label>
+              <input type="date" id="bookDate">
+            </div>
+
+            <div class="book-field">
+              <label>Time</label>
+              <input type="time" id="bookTime">
+            </div>
+          </div>
+
+          <div class="book-card">
+            <h3>Additional Notes</h3>
+
+            <div class="book-field">
+              <label>Reason</label>
+              <textarea id="bookReason"></textarea>
+            </div>
+
+            <button class="book-btn" type="submit">
+              Submit Appointment
+            </button>
+          </div>
+
+        </div>
       </form>
+
       <p id="bookMsg" class="feedback"></p>
-    `;
-    document.getElementById("bookForm").addEventListener("submit", (e) => {
-      e.preventDefault();
-      api("/appointments", {
-        method: "POST",
-        body: JSON.stringify({
-          counselorId: Number(document.getElementById("bookCounselor").value),
-          serviceType: document.getElementById("bookService").value,
-          date: document.getElementById("bookDate").value,
-          time: document.getElementById("bookTime").value,
-          reason: document.getElementById("bookReason").value.trim()
-        })
-      })
-        .then((result) => {
-          const msg = document.getElementById("bookMsg");
-          msg.textContent = `Booking ${result.bookingCode} submitted successfully.`;
-          msg.className = "feedback status-success";
-          document.getElementById("bookForm").reset();
-        })
-        .catch((err) => {
-          const msg = document.getElementById("bookMsg");
-          msg.textContent = err.message;
-          msg.style.color = "#b91c1c";
-        });
-    });
-    document.getElementById("clearBookForm").onclick = () => document.getElementById("bookForm").reset();
-  } else if (menu === "My Appointments") {
-    await loadAppointments();
-    const myItems = state.appointments;
+    </div>
+  `;
+
+  document.getElementById("bookForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+
+    document.getElementById("bookMsg").textContent =
+      "Demo mode: Appointment submitted successfully.";
+    document.getElementById("bookMsg").className =
+      "feedback status-success";
+  });
+   
+ } else if (menu === "My Appointments") {
+
+  const booking = JSON.parse(localStorage.getItem("studentBooking") || "null");
+
+  if (!booking) {
     root.innerHTML = `
       <h2 class="section-title">My Appointments</h2>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>ID</th><th>Counselor</th><th>Date</th><th>Time</th><th>Status</th><th>Action</th></tr>
-          </thead>
-          <tbody>
-            ${myItems.map((a) => `
-              <tr>
-                <td>${a.booking_code || a.id}</td>
-                <td>${a.counselor_name}</td>
-                <td>${a.appointment_date?.slice(0,10) || ""}</td>
-                <td>${String(a.appointment_time || "").slice(0,5)}</td>
-                <td><span class="pill ${a.status}">${a.status}</span></td>
-                <td>
-                  <button class="btn ghost" data-cancel="${a.id}">Cancel</button>
-                  ${a.status === "accepted" ? `<button class="btn ghost" data-resched="${a.id}">Request Reschedule</button>` : ""}
-                </td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      </div>
+      <p class="muted">No appointments found.</p>
     `;
-    document.querySelectorAll("[data-cancel]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        api(`/appointments/${btn.dataset.cancel}`, { method: "DELETE" }).then(() => renderStudentView(root, "My Appointments"));
-      });
-    });
-    document.querySelectorAll("[data-resched]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        api(`/appointments/${btn.dataset.resched}/status`, {
-          method: "PATCH",
-          body: JSON.stringify({ status: "reschedule_requested" })
-        }).then(() => renderStudentView(root, "My Appointments"));
-      });
-    });
-  } else if (menu === "Settings") {
-    root.innerHTML = `
-      <h2 class="section-title">Settings</h2>
-      <div class="switch-row">
-        <span>Dark Mode</span>
-        <input type="checkbox" id="darkModeToggle" ${state.darkMode ? "checked" : ""} />
-      </div>
-      <div class="switch-row">
-        <span>Email Notifications</span>
-        <input type="checkbox" checked />
-      </div>
-      <div class="switch-row">
-        <span>Session Auto Logout (30 mins)</span>
-        <input type="checkbox" checked />
-      </div>
-      <p class="danger-link" id="deleteAccount">Delete Account</p>
-    `;
-    document.getElementById("darkModeToggle").onchange = (e) => setDarkMode(e.target.checked);
-    document.getElementById("deleteAccount").onclick = () => {
-      alert("Demo mode: account deletion request sent to Admin.");
-    };
+    return;
   }
+
+  root.innerHTML = `
+    <h2 class="section-title">My Appointments</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Name</th>
+            <th>Concern</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr>
+            <td>${booking.time}</td>
+            <td>${booking.name}</td>
+            <td>${booking.type}</td>
+            <td><span class="pill accepted">Scheduled</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  } else if (menu === "Notifications") {
+  root.innerHTML = `
+    <h2 class="section-title">Notifications</h2>
+
+    <div class="notif-page">
+
+      <div class="notif-item">
+        <div class="notif-left">
+          <strong>Your booking on April 18, 2026 was Cancelled</strong>
+          <small>Please reschedule your booking</small>
+        </div>
+        <span>April 17, 2026 at 9:30 AM</span>
+      </div>
+
+      <div class="notif-item">
+        <div class="notif-left">
+          <strong>Your booking on April 18, 2026 was Approved</strong>
+          <small>Please arrive on time</small>
+        </div>
+        <span>April 17, 2026 at 9:30 AM</span>
+      </div>
+
+      <div class="notif-item">
+        <div class="notif-left">
+          <strong>Your booking on April 18, 2026 was Rescheduled</strong>
+          <small>Your reschedule was confirmed</small>
+        </div>
+        <span>April 17, 2026 at 9:30 AM</span>
+      </div>
+
+      <div class="notif-item">
+        <div class="notif-left">
+          <strong>You canceled your booking on April 18, 2026</strong>
+          <small>Your request has been confirmed</small>
+        </div>
+        <span>April 17, 2026 at 9:30 AM</span>
+      </div>
+
+    </div>
+  `;
+  
+} else if (menu === "Settings") {
+  root.innerHTML = `
+    <h2 class="section-title">Settings</h2>
+
+    <div class="settings-simple">
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <strong>🌙 Dark Mode</strong>
+          <small>Enable dark theme interface</small>
+        </div>
+
+        <label class="switch">
+          <input type="checkbox" id="darkModeToggle" ${state.darkMode ? "checked" : ""}>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+    </div>
+  `;
+
+  document.getElementById("darkModeToggle").onchange = (e) => {
+    setDarkMode(e.target.checked);
+  };
 }
+
+} // closes renderStudentView
 
 async function renderCounselorView(root, menu) {
   await loadAppointments();
