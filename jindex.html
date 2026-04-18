@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>XU GCO Appointment Management System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="top-bar">
+      <div class="brand">
+        <div class="logo-wrap" aria-label="School logo area">
+          <img id="schoolLogo" class="logo-img" src="assets/xu-logo.png" alt="Xavier University logo" />
+          <div id="logoFallback" class="logo" aria-hidden="true">XU</div>
+        </div>
+        <div class="brand-copy">
+          <p class="brand-title">Xavier University - Ateneo de Cagayan</p>
+          <p class="brand-subtitle">Guidance and Counseling Office</p>
+        </div>
+      </div>
+      <button id="logoutBtn" class="btn ghost hidden">Logout</button>
+    </header>
+
+    <main id="appRoot"></main>
+  </div>
+
+  <template id="roleSelectTpl">
+    <section class="auth-layout">
+      <div class="auth-visual">
+        <div class="auth-visual-card">
+          <img class="hero-logo" src="assets/xu-logo.png" alt="Xavier University logo" />
+          <p class="hero-caption">Guidance and Counseling Office</p>
+        </div>
+      </div>
+      <section class="auth-panel">
+        <p class="auth-eyebrow">Centralized Counseling Appointment Management System</p>
+        <h1>Welcome to XU GCO</h1>
+        <p class="muted">Choose how you want to enter the portal.</p>
+        <div class="role-grid">
+          <button class="role-btn" data-role="student">Student</button>
+          <button class="role-btn" data-role="counselor">Counselor</button>
+          <button class="role-btn" data-role="admin">Admin</button>
+        </div>
+        <div class="auth-help">
+
+        </div>
+      </section>
+    </section>
+  </template>
+
+  <template id="loginTpl">
+    <section class="auth-layout">
+      <div class="auth-visual">
+        <div class="auth-visual-card">
+          <img class="hero-logo" src="assets/xu-logo.png" alt="Xavier University logo" />
+          <p class="hero-caption">Student support, scheduling, and follow-up in one secure portal.</p>
+        </div>
+      </div>
+      <section class="auth-panel">
+        <p class="auth-eyebrow"><span id="loginRoleLabel"></span> Portal</p>
+        <h2>Sign In</h2>
+        <p class="muted">Use your university-issued email and password.</p>
+        <form id="loginForm" class="stack-md">
+          <label class="field">
+            <span>Email</span>
+            <input type="email" id="email" placeholder="name@my.xu.edu.ph" required />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input type="password" id="password" placeholder="Enter password" required />
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" id="rememberMe" />
+            <span>Remember me</span>
+          </label>
+          <div class="auth-actions">
+            <button type="submit" class="btn primary">Login</button>
+            <button type="button" id="backBtn" class="btn ghost">Back</button>
+          </div>
+          <div class="link-row">
+            <button type="button" id="gotoSignupBtn" class="btn link-btn">Create account</button>
+          </div>
+        </form>
+        <p id="loginMessage" class="feedback" aria-live="polite"></p>
+      </section>
+    </section>
+  </template>
+
+  <template id="signupTpl">
+    <section class="auth-layout">
+      <div class="auth-visual">
+        <div class="auth-visual-card">
+          <img class="hero-logo" src="assets/xu-logo.png" alt="Xavier University logo" />
+          <p class="hero-caption">Create a verified Xavier University account for counseling scheduling.</p>
+        </div>
+      </div>
+      <section class="auth-panel">
+        <p class="auth-eyebrow">New Account</p>
+        <h2>Create Account</h2>
+        <p class="muted">Register with your university email and confirm it via verification email.</p>
+        <form id="signupForm" class="stack-md">
+          <label class="field">
+            <span>Full Name</span>
+            <input type="text" id="signupFullName" required />
+          </label>
+          <label class="field">
+            <span>Role</span>
+            <select id="signupRole">
+              <option value="student">Student (@my.xu.edu.ph)</option>
+              <option value="counselor">Counselor (@xu.edu.ph)</option>
+              <option value="admin">Admin (@xu.edu.ph)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Email</span>
+            <input type="email" id="signupEmail" required />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input type="password" id="signupPassword" minlength="8" required />
+          </label>
+          <div class="auth-actions">
+            <button type="submit" class="btn primary">Sign up</button>
+            <button type="button" id="signupBackBtn" class="btn ghost">Back to roles</button>
+          </div>
+        </form>
+        <p id="signupMessage" class="feedback" aria-live="polite"></p>
+      </section>
+    </section>
+  </template>
+
+  <template id="dashboardTpl">
+    <section class="dashboard">
+      <aside class="sidebar">
+        <h3 id="roleDashboardLabel"></h3>
+        <nav id="menuNav" class="menu"></nav>
+      </aside>
+      <section class="panel">
+        <div id="viewRoot"></div>
+      </section>
+    </section>
+  </template>
+
+  <script src="script.js"></script>
+</body>
+</html>
