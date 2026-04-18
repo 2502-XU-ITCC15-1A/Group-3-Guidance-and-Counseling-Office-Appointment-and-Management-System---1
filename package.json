@@ -1,0 +1,30 @@
+{
+  "name": "gco",
+  "version": "1.0.0",
+  "description": "XU GCO centralized counseling appointment management system",
+  "main": "server/app.js",
+  "scripts": {
+    "start": "node server/app.js",
+    "dev": "node server/app.js",
+    "docker:up": "docker compose up --build -d",
+    "docker:down": "docker compose down",
+    "test": "echo \"No tests yet\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.1",
+    "express": "^5.2.1",
+    "googleapis": "^171.4.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.10.1",
+    "mysql2": "^3.20.0",
+    "nodemailer": "^8.0.5",
+    "qrcode": "^1.5.4"
+  }
+}
