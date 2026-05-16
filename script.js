@@ -140,7 +140,7 @@ const state = {
 
 const DASHBOARD_MENUS = {
   student: ["Dashboard", "GCO Services", "Book Appointment", "Appointment History", "Notifications", "Settings"],
-  counselor: ["Dashboard", "GCO Services", "Calendar", "Requests", "Availability", "Analytics", "Notifications", "Settings"],
+  counselor: ["Dashboard", "GCO Services", "Requests", "Availability", "Analytics", "Notifications", "Settings"],
   admin: [
     "Dashboard",
     "GCO Services",
@@ -167,7 +167,6 @@ const MENU_SLUGS_BY_ROLE = {
   counselor: {
     Dashboard: "home",
     "GCO Services": "services",
-    Calendar: "calendar",
     Requests: "requests",
     Availability: "availability",
     Analytics: "analytics",
@@ -221,9 +220,25 @@ function syncDashboardUrl(role, menu, mode) {
   setDashboardDocumentTitle(menu);
 }
 
+/** Update main panel only when the dashboard shell is already mounted (keeps sidebar DOM stable). */
+function applyDashboardSection(role, menu) {
+  const viewRoot = document.getElementById("viewRoot");
+  const menuNav = document.getElementById("menuNav");
+  if (!viewRoot || !menuNav) return false;
+  menuNav.querySelectorAll(".menu-btn").forEach((btn) => {
+    const label = btn.dataset.menuLabel ?? btn.textContent;
+    btn.classList.toggle("active", label === menu);
+  });
+  renderViewByRole(role, menu).catch((err) => {
+    viewRoot.innerHTML = `<p class="feedback feedback-error">${err.message}</p>`;
+  });
+  return true;
+}
+
 function navigateDashboard(role, menu, urlMode = "push") {
   state.activeMenu = menu;
   syncDashboardUrl(role, menu, urlMode);
+  if (applyDashboardSection(role, menu)) return;
   renderDashboard(role);
 }
 
@@ -310,26 +325,40 @@ function setupLogoDisplay() {
   const logoFallback = document.getElementById("logoFallback");
   if (!logoImg || !logoFallback) return;
 
-  logoImg.addEventListener("load", () => {
+  const showImage = () => {
     logoImg.style.display = "block";
     logoFallback.style.display = "none";
-  });
-  logoImg.addEventListener("error", () => {
+  };
+  const showFallback = () => {
     logoImg.style.display = "none";
     logoFallback.style.display = "grid";
-  });
+  };
+
+  // Image may already be cached and loaded before listeners attach.
+  if (logoImg.complete) {
+    if (logoImg.naturalWidth > 0) showImage();
+    else showFallback();
+  }
+
+  logoImg.addEventListener("load", showImage);
+  logoImg.addEventListener("error", showFallback);
 }
 
 function setDarkMode(enabled) {
   state.darkMode = enabled;
-  document.body.style.background = enabled
-    ? "linear-gradient(145deg, #09111f 0%, #10203a 100%)"
-    : "linear-gradient(145deg, #f8fbff 0%, #eef4ff 100%)";
-  document.querySelectorAll(".panel, .card, .top-bar").forEach((el) => {
-    el.style.background = enabled ? "#111827" : "";
-    el.style.color = enabled ? "#f3f4f6" : "";
-    el.style.borderColor = enabled ? "#1f2937" : "";
-  });
+  if (enabled) {
+    document.body.classList.add("dark-mode");
+    localStorage.setItem("gco_dark_mode", "1");
+  } else {
+    document.body.classList.remove("dark-mode");
+    localStorage.removeItem("gco_dark_mode");
+  }
+}
+
+if (localStorage.getItem("gco_dark_mode") === "1") {
+  state.darkMode = true;
+  document.addEventListener("DOMContentLoaded", () => document.body.classList.add("dark-mode"));
+  if (document.body) document.body.classList.add("dark-mode");
 }
 
 function getRequiredDomainByRole(role) {
@@ -342,6 +371,66 @@ function isValidUniversityEmailForRole(email, role) {
   const requiredDomain = getRequiredDomainByRole(role);
   return email.trim().toLowerCase().endsWith(`@${requiredDomain}`);
 }
+
+function validateStrongPassword(password) {
+  const value = String(password || "");
+  if (value.length < 10) return { ok: false, message: "Password must be at least 10 characters." };
+  if (!/[a-z]/.test(value)) return { ok: false, message: "Password must include a lowercase letter." };
+  if (!/[A-Z]/.test(value)) return { ok: false, message: "Password must include an uppercase letter." };
+  if (!/\d/.test(value)) return { ok: false, message: "Password must include a number." };
+  if (!/[^A-Za-z0-9]/.test(value)) return { ok: false, message: "Password must include a special character." };
+  return { ok: true, message: "Strong password." };
+}
+
+function attachPasswordToggle(input, label = "password") {
+  if (!input || input.dataset.enhanced === "1") return;
+  const wrap = document.createElement("div");
+  wrap.className = "password-input-wrap";
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "password-eye-btn";
+  toggle.textContent = "Show";
+  toggle.setAttribute("aria-label", `Show ${label}`);
+  toggle.onclick = () => {
+    const toText = input.type === "password";
+    input.type = toText ? "text" : "password";
+    toggle.textContent = toText ? "Hide" : "Show";
+    toggle.setAttribute("aria-label", `${toText ? "Hide" : "Show"} ${label}`);
+  };
+  wrap.appendChild(toggle);
+  input.dataset.enhanced = "1";
+}
+
+function attachPasswordStrength(input, indicatorEl) {
+  if (!input || !indicatorEl) return;
+  const update = () => {
+    if (!input.value) {
+      indicatorEl.textContent = "Use 10+ chars, upper/lowercase, number, and special character.";
+      indicatorEl.className = "muted tiny";
+      return;
+    }
+    const check = validateStrongPassword(input.value);
+    indicatorEl.textContent = check.message;
+    indicatorEl.className = check.ok ? "feedback status-success tiny" : "feedback feedback-error tiny";
+  };
+  input.addEventListener("input", update);
+  update();
+}
+
+const YEAR_LEVEL_OPTIONS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
+const COLLEGE_OPTIONS = [
+  "College of Arts and Sciences",
+  "College of Computer Studies",
+  "School of Education",
+  "School of Law",
+  "College of Engineering",
+  "School of Business and Management",
+  "School of Medicine",
+  "College of Nursing",
+  "College of Agriculture"
+];
 
 function renderRoleSelect() {
   document.title = "XU GCO";
@@ -356,7 +445,7 @@ function renderRoleSelect() {
   if (params.get("err") === "role" && msgEl) {
     msgEl.classList.remove("hidden");
     msgEl.textContent = "Choose Student, Counselor, or Admin first.";
-    msgEl.style.color = "#b91c1c";
+    msgEl.className = "feedback feedback-error";
   }
 
   document.querySelectorAll(".role-btn").forEach((btn) => {
@@ -399,7 +488,7 @@ function startStudentGoogleSignIn(msgEl) {
           msgEl.classList.remove("hidden");
           msgEl.textContent =
             "Google sign-in is not configured yet. Set ENABLE_GOOGLE_OAUTH=true and valid GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in .env, then restart.";
-          msgEl.style.color = "#b91c1c";
+          msgEl.className = "feedback feedback-error";
         }
         return;
       }
@@ -409,7 +498,7 @@ function startStudentGoogleSignIn(msgEl) {
       if (msgEl) {
         msgEl.classList.remove("hidden");
         msgEl.textContent = "Cannot reach server.";
-        msgEl.style.color = "#b91c1c";
+        msgEl.className = "feedback feedback-error";
       }
     });
 }
@@ -433,12 +522,24 @@ function renderLogin(role) {
   const signupNameInput = document.getElementById("signupFullName");
   const signupEmailInput = document.getElementById("signupEmail");
   const signupPasswordInput = document.getElementById("signupPassword");
+  const signupPasswordField = signupPasswordInput?.closest(".field");
   const showSignupBtn = document.getElementById("showSignupBtn");
   const showLoginBtn = document.getElementById("showLoginBtn");
   const loginPane = document.getElementById("loginPane");
   const signupPane = document.getElementById("signupPane");
   const roleEmailHint = document.getElementById("roleEmailHint");
   if (roleEmailHint) roleEmailHint.textContent = "@xu.edu.ph";
+  attachPasswordToggle(passwordInput, "login password");
+  attachPasswordToggle(signupPasswordInput, "signup password");
+  if (signupPasswordField) {
+    const signupStrength = document.createElement("p");
+    signupStrength.id = "signupPasswordStrength";
+    signupStrength.className = "muted tiny";
+    signupPasswordField.appendChild(signupStrength);
+    attachPasswordStrength(signupPasswordInput, signupStrength);
+  }
+
+
 
   const openPane = (name) => {
     const loginOpen = name === "login";
@@ -448,6 +549,17 @@ function renderLogin(role) {
   showSignupBtn?.addEventListener("click", () => openPane("signup"));
   showLoginBtn?.addEventListener("click", () => openPane("login"));
 
+  if (role === "counselor" || role === "admin") {
+    if (showSignupBtn) {
+      showSignupBtn.remove();
+    }
+    if (signupPane) {
+      signupPane.classList.add("hidden");
+      signupPane.remove();
+    }
+    if (loginPane) loginPane.classList.remove("hidden");
+  }
+
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const email = emailInput.value.trim().toLowerCase();
@@ -455,7 +567,7 @@ function renderLogin(role) {
 
     if (!isValidUniversityEmailForRole(email, role)) {
       message.textContent = `Use @${getRequiredDomainByRole(role)} for this portal.`;
-      message.style.color = "#b91c1c";
+      message.className = "feedback feedback-error";
       return;
     }
 
@@ -469,7 +581,7 @@ function renderLogin(role) {
         localStorage.setItem("gco_token", result.token);
         localStorage.setItem("gco_user", JSON.stringify(result.user));
         message.textContent = "Success. Loading dashboard…";
-        message.classList.add("status-success");
+        message.className = "feedback status-success";
         const ur = result.user.role;
         state.activeMenu = DASHBOARD_MENUS[ur][0];
         history.replaceState(null, "", getDashboardPath(ur, state.activeMenu));
@@ -478,7 +590,7 @@ function renderLogin(role) {
       })
       .catch((err) => {
         message.textContent = err.message;
-        message.style.color = "#b91c1c";
+        message.className = "feedback feedback-error";
       });
   });
 
@@ -490,7 +602,13 @@ function renderLogin(role) {
     if (!fullName || !email || !password) return;
     if (!isValidUniversityEmailForRole(email, role)) {
       signupMessage.textContent = "Use @xu.edu.ph email.";
-      signupMessage.style.color = "#b91c1c";
+      signupMessage.className = "feedback feedback-error";
+      return;
+    }
+    const strong = validateStrongPassword(password);
+    if (!strong.ok) {
+      signupMessage.textContent = strong.message;
+      signupMessage.className = "feedback feedback-error";
       return;
     }
     api("/auth/signup", {
@@ -503,7 +621,7 @@ function renderLogin(role) {
       })
       .catch((err) => {
         signupMessage.textContent = err.message;
-        signupMessage.style.color = "#b91c1c";
+        signupMessage.className = "feedback feedback-error";
       });
   });
 
@@ -515,6 +633,7 @@ function renderDashboard(role) {
   appRoot.innerHTML = "";
   appRoot.appendChild(tpl);
   logoutBtn.classList.remove("hidden");
+  setupNotificationBell(role);
   logoutBtn.onclick = () => {
     if (notificationPollTimer) {
       clearInterval(notificationPollTimer);
@@ -542,6 +661,8 @@ function renderDashboard(role) {
     localStorage.removeItem("gco_token");
     localStorage.removeItem("gco_user");
     clearAuthProvidersCache();
+    const bell = document.getElementById("notifBellBtn");
+    if (bell) bell.classList.add("hidden");
     window.location.href = "/auth/logout";
   };
 
@@ -567,6 +688,8 @@ function renderDashboard(role) {
 
   menusByRole[role].forEach((menu) => {
     const btn = document.createElement("button");
+    btn.type = "button";
+    btn.dataset.menuLabel = menu;
     btn.className = `menu-btn ${menu === state.activeMenu ? "active" : ""}`;
     btn.textContent = menu;
     btn.onclick = () => {
@@ -579,7 +702,7 @@ function renderDashboard(role) {
 
   renderViewByRole(role, state.activeMenu).catch((err) => {
     const root = document.getElementById("viewRoot");
-    root.innerHTML = `<p class="feedback" style="color:#b91c1c;">${err.message}</p>`;
+    root.innerHTML = `<p class="feedback feedback-error">${err.message}</p>`;
   });
   if (notificationPollTimer) clearInterval(notificationPollTimer);
   notificationPollTimer = setInterval(() => {
@@ -629,6 +752,10 @@ async function refreshSidebarIdentity() {
 async function renderViewByRole(role, menu) {
   const root = document.getElementById("viewRoot");
   if (!root) return;
+  root.classList.remove("view-anim-in");
+  // force reflow so the animation restarts on every tab change
+  void root.offsetWidth;
+  root.classList.add("view-anim-in");
   if (role === "student") return renderStudentView(root, menu);
   if (role === "counselor") return renderCounselorView(root, menu);
   if (role === "admin") return renderAdminView(root, menu);
@@ -646,6 +773,37 @@ async function loadNotifications() {
   }
   state.lastSeenNotificationCount = state.notifications.length;
   localStorage.setItem("gco_last_seen_notif_count", String(state.lastSeenNotificationCount));
+  refreshNotificationBell();
+}
+
+function refreshNotificationBell() {
+  const bell = document.getElementById("notifBellBtn");
+  const badge = document.getElementById("notifBellBadge");
+  if (!bell || !badge) return;
+  const unread = (state.notifications || []).filter((n) => !n.is_read).length;
+  if (unread > 0) {
+    badge.textContent = unread > 99 ? "99+" : String(unread);
+    badge.classList.remove("hidden");
+    bell.classList.add("has-unread");
+    bell.setAttribute("aria-label", `${unread} unread notifications`);
+  } else {
+    badge.classList.add("hidden");
+    bell.classList.remove("has-unread");
+    bell.setAttribute("aria-label", "Notifications");
+  }
+}
+
+function setupNotificationBell(role) {
+  const bell = document.getElementById("notifBellBtn");
+  if (!bell) return;
+  bell.classList.remove("hidden");
+  bell.onclick = () => {
+    if (!state.user) return;
+    const menus = DASHBOARD_MENUS[role] || [];
+    if (!menus.includes("Notifications")) return;
+    navigateDashboard(role, "Notifications", "push");
+  };
+  loadNotifications().catch(() => {});
 }
 
 async function loadCounselors() {
@@ -664,11 +822,16 @@ function showToast(message) {
   }, 2800);
 }
 
-function buildYearCalendar(year, appointments, unavailable) {
+function buildYearCalendar(year, appointments, unavailable, options = {}) {
+  const { disableWeekendBooking } = options;
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const week = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
   const todayIso = new Date().toISOString().slice(0, 10);
-  const unavailableMap = new Map(unavailable.map((u) => [String(u.unavailable_date).slice(0, 10), u]));
+  const fullDayBlocks = unavailable.filter((u) => !u.start_time && !u.end_time);
+  const unavailableMap = new Map(fullDayBlocks.map((u) => [String(u.unavailable_date).slice(0, 10), u]));
+  const partialDates = new Set(
+    unavailable.filter((u) => u.start_time || u.end_time).map((u) => String(u.unavailable_date).slice(0, 10))
+  );
   const appointmentDates = new Set(appointments.map((a) => String(a.appointment_date).slice(0, 10)));
   return monthNames
     .map((monthName, monthIndex) => {
@@ -678,12 +841,21 @@ function buildYearCalendar(year, appointments, unavailable) {
       for (let i = 0; i < firstDay; i += 1) cells.push('<div class="month-day empty"></div>');
       for (let day = 1; day <= daysInMonth; day += 1) {
         const iso = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        const dow = new Date(year, monthIndex, day).getDay();
+        const isWeekend = dow === 0 || dow === 6;
         const classes = ["month-day"];
-        if (unavailableMap.has(iso)) classes.push("unavailable");
+        if (disableWeekendBooking && isWeekend) classes.push("weekend-no-book");
+        else if (unavailableMap.has(iso)) classes.push("unavailable");
         else if (iso === todayIso) classes.push("today");
-        else if (appointmentDates.has(iso)) classes.push("booked");
-        const title = unavailableMap.has(iso) ? unavailableMap.get(iso).message || "Unavailable" : appointmentDates.has(iso) ? "With appointments" : "Available";
-        cells.push(`<button type="button" class="${classes.join(" ")} calendar-day-btn" data-date="${iso}" title="${title}">${day}</button>`);
+        else if (appointmentDates.has(iso) || partialDates.has(iso)) classes.push("booked");
+        let title = "";
+        if (disableWeekendBooking && isWeekend) {
+          title = "No bookings on weekends";
+        } else if (unavailableMap.has(iso)) title = unavailableMap.get(iso).message || "Unavailable";
+        else if (partialDates.has(iso)) title = "Partially blocked — open the day to see available times";
+        else if (appointmentDates.has(iso)) title = "With appointments";
+        else title = "Available";
+        cells.push(`<button type="button" class="${classes.join(" ")} calendar-day-btn" data-date="${iso}" title="${escapeHtml(title)}">${day}</button>`);
       }
       return `
         <div class="month-card">
@@ -697,18 +869,7 @@ function buildYearCalendar(year, appointments, unavailable) {
 }
 
 async function renderCounselorCalendar(root) {
-  if (!counselorCalendarPollTimer) {
-    counselorCalendarPollTimer = setInterval(async () => {
-      if (!state.user || state.currentRole !== "counselor") return;
-      if (!["Calendar", "Availability"].includes(state.activeMenu)) return;
-      try {
-        await renderCounselorCalendar(root);
-      } catch (_err) {
-        // Ignore transient refresh errors; user-triggered actions still show explicit errors.
-      }
-    }, 5000);
-  }
-
+  stopCounselorCalendarPolling();
   const year = state.calendarYear || new Date().getFullYear();
   const [calendar, availability] = await Promise.all([api(`/counselor/calendar?year=${year}`), api("/counselor/availability")]);
   state.counselorUnavail = availability;
@@ -722,21 +883,32 @@ async function renderCounselorCalendar(root) {
         <p class="muted tiny">Last updated: ${refreshedAt.toLocaleTimeString()}</p>
       </div>
     </div>
-    <div class="card stack-md" style="margin-bottom:1rem;">
-      <h3>Add Unavailable Date</h3>
+    <div class="card stack-md section-block">
+      <h3>Add Unavailable Date / Time</h3>
+      <p class="muted tiny">Leave both times blank to block the entire day. Otherwise students cannot pick that date during the blocked window.</p>
       <form id="availabilityForm" class="stack-md">
         <label class="field"><span>Date</span><input type="date" id="unavailableDate" required /></label>
-        <label class="field"><span>Reason (optional)</span><input type="text" id="unavailableReason" placeholder="e.g., May 1, 2026, unavailable (Labor Day)" /></label>
+        <div class="availability-time-row">
+          <label class="field"><span>Start time (optional)</span><input type="time" id="unavailableStart" /></label>
+          <label class="field"><span>End time (optional)</span><input type="time" id="unavailableEnd" /></label>
+        </div>
+        <label class="field"><span>Reason (optional)</span><input type="text" id="unavailableReason" placeholder="e.g., May 1, 2026, unavailable (Labor Day) or Faculty meeting" /></label>
         <button class="btn primary" type="submit">Save Availability</button>
       </form>
       <p id="availabilityMsg" class="feedback"></p>
     </div>
-    <div class="table-wrap" style="margin-bottom:1rem;">
+    <div class="table-wrap section-block">
       ${availability.length ? `
       <table>
-        <thead><tr><th>Date</th><th>Reason</th><th>Action</th></tr></thead>
+        <thead><tr><th>Date</th><th>Time</th><th>Reason</th><th>Action</th></tr></thead>
         <tbody>
-          ${availability.slice(0, 20).map((u) => `<tr><td>${String(u.unavailable_date).slice(0, 10)}</td><td>${u.message || "-"}</td><td><button class="btn ghost remove-unavailable" data-id="${u.id}">Remove</button></td></tr>`).join("")}
+          ${availability.slice(0, 30).map((u) => {
+            const dateStr = String(u.unavailable_date).slice(0, 10);
+            const start = u.start_time ? String(u.start_time).slice(0, 5) : "";
+            const end = u.end_time ? String(u.end_time).slice(0, 5) : "";
+            const timeLabel = start || end ? `${start || "—"} – ${end || "—"}` : "<em>All day</em>";
+            return `<tr><td>${dateStr}</td><td>${timeLabel}</td><td>${escapeHtml(u.message || "-")}</td><td><button class="btn ghost remove-unavailable" data-id="${u.id}">Remove</button></td></tr>`;
+          }).join("")}
         </tbody>
       </table>` : `<p class="muted">No unavailable dates yet.</p>`}
     </div>
@@ -769,15 +941,30 @@ async function renderCounselorCalendar(root) {
     e.preventDefault();
     const date = document.getElementById("unavailableDate").value;
     const reason = document.getElementById("unavailableReason").value.trim();
+    const startTime = document.getElementById("unavailableStart").value || null;
+    const endTime = document.getElementById("unavailableEnd").value || null;
     const msg = document.getElementById("availabilityMsg");
+    if ((startTime && !endTime) || (!startTime && endTime)) {
+      msg.textContent = "Provide both start and end time, or leave both empty for an all-day block.";
+      msg.className = "feedback feedback-error";
+      return;
+    }
     try {
-      await api("/counselor/availability", { method: "POST", body: JSON.stringify({ unavailable_date: date, message: reason || null }) });
+      await api("/counselor/availability", {
+        method: "POST",
+        body: JSON.stringify({
+          unavailable_date: date,
+          start_time: startTime,
+          end_time: endTime,
+          message: reason || null
+        })
+      });
       msg.textContent = "Availability saved.";
       msg.className = "feedback status-success";
       await renderCounselorCalendar(root);
     } catch (err) {
       msg.textContent = err.message;
-      msg.style.color = "#b91c1c";
+      msg.className = "feedback feedback-error";
     }
   };
 
@@ -850,13 +1037,84 @@ function renderRecentActivity(items) {
   const rows = (items || []).slice(0, 8);
   if (!rows.length) return "<p class='muted'>No recent activity.</p>";
   return `<div class="stack-sm">${rows
-    .map((n) => `<div class="info-card"><strong>${n.title || "Activity"}</strong><p class="muted">${n.message || ""}</p></div>`)
+    .map((n) => {
+      const unreadCls = n.is_read ? "" : " unread";
+      const badge = n.is_read ? "" : '<span class="pill-unread">New</span>';
+      return `<div class="info-card${unreadCls ? " unread" : ""}"><strong>${escapeHtml(n.title || "Activity")}</strong><p class="muted">${escapeHtml(n.message || "")}</p>${badge}</div>`;
+    })
     .join("")}</div>`;
+}
+
+function formatRelativeTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return d.toLocaleDateString();
 }
 
 async function renderNotificationsView(root) {
   await loadNotifications();
-  root.innerHTML = `<div class="panel-header"><h2 class="section-title">Notifications</h2></div>${renderRecentActivity(state.notifications)}`;
+  const items = state.notifications || [];
+  const unreadCount = items.filter((n) => !n.is_read).length;
+  const listHtml = items.length === 0
+    ? "<p class='muted'>No notifications yet.</p>"
+    : `<div class="stack-sm">${items
+        .map((n) => {
+          const unreadCls = n.is_read ? "" : " unread";
+          const badge = n.is_read ? "" : '<span class="pill-unread">New</span>';
+          return `<div class="notification-row${unreadCls}" data-id="${n.id}" data-read="${n.is_read ? 1 : 0}">
+            <span class="notification-dot" aria-hidden="true"></span>
+            <div class="notification-body">
+              <strong>${escapeHtml(n.title || "Notification")}</strong>
+              <p>${escapeHtml(n.message || "")}</p>
+              ${badge}
+            </div>
+            <div class="notification-meta">${formatRelativeTime(n.created_at)}</div>
+          </div>`;
+        })
+        .join("")}</div>`;
+  root.innerHTML = `
+    <div class="panel-header">
+      <div>
+        <h2 class="section-title">Notifications</h2>
+        <p class="muted tiny">${unreadCount} unread of ${items.length} total.</p>
+      </div>
+      <button id="markAllReadBtn" class="btn ghost" ${unreadCount === 0 ? "disabled" : ""}>Mark all as read</button>
+    </div>
+    ${listHtml}
+    <p id="notifMsg" class="feedback"></p>`;
+
+  const msg = document.getElementById("notifMsg");
+  document.getElementById("markAllReadBtn")?.addEventListener("click", async () => {
+    try {
+      await api("/notifications/read-all", { method: "PATCH" });
+      await renderNotificationsView(root);
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.className = "feedback feedback-error";
+    }
+  });
+
+  document.querySelectorAll(".notification-row").forEach((row) => {
+    row.addEventListener("click", async () => {
+      if (row.dataset.read === "1") return;
+      const id = row.dataset.id;
+      try {
+        await api(`/notifications/${id}/read`, { method: "PATCH" });
+        row.classList.remove("unread");
+        row.dataset.read = "1";
+        row.querySelector(".pill-unread")?.remove();
+        await loadNotifications();
+      } catch (_err) {
+        /* ignore */
+      }
+    });
+  });
 }
 
 async function renderAccountSettings(root) {
@@ -864,17 +1122,17 @@ async function renderAccountSettings(root) {
   const oauthOnly = me.authProvider === "google" && !me.hasPassword;
   const passwordSection = oauthOnly
     ? ""
-    : `<div class="card stack-md" style="margin-bottom:1rem;">
+    : `<div class="card stack-md section-block">
       <h3>Change Password</h3>
       <form id="passwordForm" class="stack-md">
         <label class="field"><span>Current password</span><input id="currentPassword" type="password" required /></label>
-        <label class="field"><span>New password</span><input id="newPassword" type="password" minlength="8" required /></label>
+        <label class="field"><span>New password</span><input id="newPassword" type="password" minlength="10" required /></label>
         <button class="btn primary" type="submit">Update Password</button>
       </form>
     </div>`;
   root.innerHTML = `
     <div class="panel-header"><h2 class="section-title">Settings</h2></div>
-    <div class="card stack-md" style="margin-bottom:1rem;">
+    <div class="card stack-md section-block">
       <h3>Profile</h3>
       <p class="muted tiny">Signed in as <strong>${escapeHtml(me.email || "")}</strong> (${escapeHtml(me.role || "")})</p>
       <form id="profileForm" class="stack-md">
@@ -887,7 +1145,10 @@ async function renderAccountSettings(root) {
     ${passwordSection}
     <div class="switch-row">
       <div><strong>Dark Mode</strong><p class="muted tiny">Toggle appearance</p></div>
-      <input id="darkModeToggle" type="checkbox" ${state.darkMode ? "checked" : ""} />
+      <label class="switch" aria-label="Toggle dark mode">
+        <input id="darkModeToggle" type="checkbox" ${state.darkMode ? "checked" : ""} />
+        <span class="switch-slider"></span>
+      </label>
     </div>
     <div class="switch-row">
       <div><strong>Delete Account</strong><p class="muted tiny">Deactivate your account</p></div>
@@ -912,14 +1173,14 @@ async function renderAccountSettings(root) {
       msg.className = "feedback status-success";
     } catch (err) {
       msg.textContent = err.message;
-      msg.style.color = "#b91c1c";
+      msg.className = "feedback feedback-error";
     }
   };
   document.getElementById("uploadProfilePicBtn").onclick = async () => {
     const file = document.getElementById("profilePicFile").files?.[0];
     if (!file) {
       msg.textContent = "Choose an image file first.";
-      msg.style.color = "#b91c1c";
+      msg.className = "feedback feedback-error";
       return;
     }
     const form = new FormData();
@@ -931,13 +1192,29 @@ async function renderAccountSettings(root) {
       msg.className = "feedback status-success";
     } catch (err) {
       msg.textContent = err.message;
-      msg.style.color = "#b91c1c";
+      msg.className = "feedback feedback-error";
     }
   };
 
   if (!oauthOnly) {
+    attachPasswordToggle(document.getElementById("currentPassword"), "current password");
+    attachPasswordToggle(document.getElementById("newPassword"), "new password");
+    const newPasswordField = document.getElementById("newPassword")?.closest(".field");
+    if (newPasswordField) {
+      const indicator = document.createElement("p");
+      indicator.className = "muted tiny";
+      newPasswordField.appendChild(indicator);
+      attachPasswordStrength(document.getElementById("newPassword"), indicator);
+    }
     document.getElementById("passwordForm").onsubmit = async (e) => {
       e.preventDefault();
+      const nextPassword = document.getElementById("newPassword").value;
+      const strong = validateStrongPassword(nextPassword);
+      if (!strong.ok) {
+        msg.textContent = strong.message;
+        msg.className = "feedback feedback-error";
+        return;
+      }
       try {
         await api("/auth/me/password", {
           method: "PATCH",
@@ -950,7 +1227,7 @@ async function renderAccountSettings(root) {
         msg.className = "feedback status-success";
       } catch (err) {
         msg.textContent = err.message;
-        msg.style.color = "#b91c1c";
+        msg.className = "feedback feedback-error";
       }
     };
   }
@@ -977,17 +1254,129 @@ async function renderCounselorView(root, menu) {
   if (menu === "Settings") return renderAccountSettings(root);
   if (menu === "Requests") {
     await loadAppointments();
-    const rows = state.appointments.filter((a) => ["pending", "reschedule_requested"].includes(a.status));
-    const logRows = [...state.appointments].sort((a, b) => {
+    const sortDesc = (a, b) => {
       const d = String(b.appointment_date).localeCompare(String(a.appointment_date));
       if (d !== 0) return d;
       return String(b.appointment_time).localeCompare(String(a.appointment_time));
+    };
+    const openRequests = state.appointments
+      .filter((a) => ["pending", "reschedule_requested"].includes(a.status))
+      .sort(sortDesc);
+    const isClosed = (a) => Boolean(a.outcome);
+    const activeRows = state.appointments.filter((a) => !isClosed(a)).sort(sortDesc);
+    const closedRows = state.appointments.filter(isClosed).sort(sortDesc);
+
+    const formatDateTime = (a) => `${formatDisplayDate(a.appointment_date)} • ${formatDisplayTime(a.appointment_time)}`;
+    const outcomePill = (o) => {
+      if (!o) return "";
+      const label = o === "no_show" ? "No-show" : o.charAt(0).toUpperCase() + o.slice(1);
+      return `<span class="outcome-pill ${o}">${label}</span>`;
+    };
+
+    const renderActiveActions = (a) => {
+      if (a.status !== "accepted") {
+        return `<span class="muted">—</span>`;
+      }
+      return `<div class="outcome-actions">
+        <select class="outcome-select" data-id="${a.id}" aria-label="Select outcome">
+          <option value="">Select outcome…</option>
+          <option value="done">Done</option>
+          <option value="referred">Referred</option>
+          <option value="no_show">No-show</option>
+        </select>
+        <button type="button" class="btn primary outcome-submit" data-id="${a.id}" disabled>Submit</button>
+      </div>`;
+    };
+
+    const pendingTable = `<div class="table-wrap"><table><thead><tr><th>Code</th><th>Date</th><th>Time</th><th>Status</th><th>Action</th></tr></thead><tbody>${openRequests.map((a) => `<tr><td>${escapeHtml(a.booking_code)}</td><td>${formatDisplayDate(a.appointment_date)}</td><td>${formatDisplayTime(a.appointment_time)}</td><td>${a.status}</td><td><button class="btn primary approve-btn" data-id="${a.id}">Accept</button><button class="btn ghost decline-btn" data-id="${a.id}">Decline</button></td></tr>`).join("") || `<tr><td colspan="5">No open requests</td></tr>`}</tbody></table></div>`;
+
+    const activeTable = `<div class="table-wrap u-mt-section"><table><thead><tr><th>Date / Time</th><th>Student</th><th>Service Type</th><th>Student Cancellation</th><th>Status</th><th>Action</th></tr></thead><tbody>${activeRows.map((a) => `<tr>
+      <td>${formatDateTime(a)}</td>
+      <td>${escapeHtml(a.student_name || "—")}</td>
+      <td>${escapeHtml(a.service_type || "—")}</td>
+      <td>${a.student_cancellation_reason ? escapeHtml(a.student_cancellation_reason) : "—"}</td>
+      <td>${a.status}</td>
+      <td>${renderActiveActions(a)}</td>
+    </tr>`).join("") || `<tr><td colspan="6">No appointments yet</td></tr>`}</tbody></table></div>`;
+
+    const closedTable = closedRows.length === 0
+      ? `<p class="muted">No closed appointments yet. Counselors mark sessions as Done, Referred, or No-show using the buttons above.</p>`
+      : `<div class="table-wrap"><table><thead><tr><th>Date / Time</th><th>Student</th><th>Service Type</th><th>Outcome</th><th>Marked at</th></tr></thead><tbody>${closedRows.map((a) => `<tr>
+        <td>${formatDateTime(a)}</td>
+        <td>${escapeHtml(a.student_name || "—")}</td>
+        <td>${escapeHtml(a.service_type || "—")}</td>
+        <td>${outcomePill(a.outcome)}</td>
+        <td>${a.outcome_at ? new Date(a.outcome_at).toLocaleString() : "—"}</td>
+      </tr>`).join("")}</tbody></table></div>`;
+
+    root.innerHTML = `
+      <div class="panel-header"><h2 class="section-title">Requests</h2></div>
+      <h3 class="subsection-title">Open requests</h3>
+      ${pendingTable}
+      <h3 class="subsection-title u-mt-section">All your appointments</h3>
+      <p class="muted tiny">After a session, mark it as Done, Referred, or No-show. Closed items move to the section below.</p>
+      ${activeTable}
+      <div id="closedAppointmentsCard" class="collapsible-card">
+        <button type="button" class="collapsible-header" id="closedAppointmentsToggle" aria-expanded="false">
+          <span>Closed appointments (${closedRows.length})</span>
+          <span class="chevron">›</span>
+        </button>
+        <div class="collapsible-body">${closedTable}</div>
+      </div>
+      <p id="counselorRequestsMsg" class="feedback"></p>
+    `;
+
+    const reqMsg = document.getElementById("counselorRequestsMsg");
+    document.querySelectorAll(".approve-btn").forEach((btn) => (btn.onclick = async () => {
+      try {
+        await api(`/appointments/${btn.dataset.id}/status`, { method: "PATCH", body: JSON.stringify({ status: "accepted" }) });
+        await renderCounselorView(root, menu);
+      } catch (err) { reqMsg.textContent = err.message; reqMsg.className = "feedback feedback-error"; }
+    }));
+    document.querySelectorAll(".decline-btn").forEach((btn) => (btn.onclick = async () => {
+      try {
+        await api(`/appointments/${btn.dataset.id}/status`, { method: "PATCH", body: JSON.stringify({ status: "declined" }) });
+        await renderCounselorView(root, menu);
+      } catch (err) { reqMsg.textContent = err.message; reqMsg.className = "feedback feedback-error"; }
+    }));
+    document.querySelectorAll(".outcome-select").forEach((sel) => {
+      sel.addEventListener("change", () => {
+        const submitBtn = document.querySelector(`.outcome-submit[data-id="${sel.dataset.id}"]`);
+        if (submitBtn) submitBtn.disabled = !sel.value;
+      });
     });
-    const pendingTable = `<div class="table-wrap"><table><thead><tr><th>Code</th><th>Date</th><th>Time</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows.map((a) => `<tr><td>${escapeHtml(a.booking_code)}</td><td>${a.appointment_date}</td><td>${String(a.appointment_time).slice(0, 5)}</td><td>${a.status}</td><td><button class="btn primary approve-btn" data-id="${a.id}">Accept</button><button class="btn ghost decline-btn" data-id="${a.id}">Decline</button></td></tr>`).join("") || `<tr><td colspan="5">No open requests</td></tr>`}</tbody></table></div>`;
-    const logTable = `<div class="table-wrap" style="margin-top:1.25rem;"><table><thead><tr><th>Code</th><th>Student</th><th>Date</th><th>Time</th><th>Status</th><th>Student cancellation</th></tr></thead><tbody>${logRows.map((a) => `<tr><td>${escapeHtml(a.booking_code)}</td><td>${escapeHtml(a.student_name || "—")}</td><td>${a.appointment_date}</td><td>${String(a.appointment_time).slice(0, 5)}</td><td>${a.status}</td><td>${a.student_cancellation_reason ? escapeHtml(a.student_cancellation_reason) : "—"}</td></tr>`).join("") || `<tr><td colspan="6">No appointments yet</td></tr>`}</tbody></table></div>`;
-    root.innerHTML = `<div class="panel-header"><h2 class="section-title">Requests</h2></div><h3 class="subsection-title">Open requests</h3>${pendingTable}<h3 class="subsection-title">All your appointments</h3><p class="muted tiny">When a student cancels, their reason appears in the last column.</p>${logTable}`;
-    document.querySelectorAll(".approve-btn").forEach((btn) => (btn.onclick = async () => { await api(`/appointments/${btn.dataset.id}/status`, { method: "PATCH", body: JSON.stringify({ status: "accepted" }) }); await renderCounselorView(root, menu); }));
-    document.querySelectorAll(".decline-btn").forEach((btn) => (btn.onclick = async () => { await api(`/appointments/${btn.dataset.id}/status`, { method: "PATCH", body: JSON.stringify({ status: "declined" }) }); await renderCounselorView(root, menu); }));
+    document.querySelectorAll(".outcome-submit").forEach((btn) => (btn.onclick = async () => {
+      const sel = document.querySelector(`.outcome-select[data-id="${btn.dataset.id}"]`);
+      const outcome = sel?.value;
+      if (!outcome) {
+        reqMsg.textContent = "Please choose an outcome from the dropdown first.";
+        reqMsg.className = "feedback feedback-error";
+        return;
+      }
+      const labelMap = { done: "mark as Done", referred: "mark as Referred", no_show: "mark as No-show" };
+      if (!confirm(`Are you sure you want to ${labelMap[outcome] || outcome} this appointment?`)) return;
+      btn.disabled = true;
+      const prevText = btn.textContent;
+      btn.textContent = "Saving…";
+      try {
+        await api(`/appointments/${btn.dataset.id}/outcome`, { method: "PATCH", body: JSON.stringify({ outcome }) });
+        reqMsg.textContent = "Outcome saved.";
+        reqMsg.className = "feedback status-success";
+        await renderCounselorView(root, menu);
+      } catch (err) {
+        reqMsg.textContent = err.message;
+        reqMsg.className = "feedback feedback-error";
+        btn.disabled = false;
+        btn.textContent = prevText;
+      }
+    }));
+
+    const collapsible = document.getElementById("closedAppointmentsCard");
+    const toggle = document.getElementById("closedAppointmentsToggle");
+    toggle?.addEventListener("click", () => {
+      const open = collapsible.classList.toggle("open");
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    });
     return;
   }
   if (menu === "Analytics") {
@@ -1002,6 +1391,13 @@ async function renderCounselorView(root, menu) {
             <div class="kpi"><p>This week</p><strong id="counselorKpiWeek">${data.weekly}</strong></div>
             <div class="kpi"><p>This month</p><strong id="counselorKpiMonth">${data.monthly}</strong></div>
             <div class="kpi"><p>This year</p><strong id="counselorKpiYear">${data.yearly}</strong></div>
+          </div>
+          <h3 class="subsection-title u-mt-section">Outcome breakdown (all-time)</h3>
+          <div class="grid-4 outcome-grid">
+            <div class="kpi outcome-card done"><p>Done</p><strong id="counselorOutDone">0</strong></div>
+            <div class="kpi outcome-card referred"><p>Referred</p><strong id="counselorOutReferred">0</strong></div>
+            <div class="kpi outcome-card no-show"><p>No-show</p><strong id="counselorOutNoShow">0</strong></div>
+            <div class="kpi outcome-card cancelled"><p>Cancelled by student</p><strong id="counselorOutCancelled">0</strong></div>
           </div>
           <div class="analytics-charts-row">
             <div class="chart-card">
@@ -1020,6 +1416,12 @@ async function renderCounselorView(root, menu) {
         document.getElementById("counselorKpiMonth").textContent = data.monthly;
         document.getElementById("counselorKpiYear").textContent = data.yearly;
       }
+      const ob = data.outcomeBreakdown?.totals || { done: 0, referred: 0, noShow: 0, cancelledByStudent: 0 };
+      const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      setText("counselorOutDone", ob.done);
+      setText("counselorOutReferred", ob.referred);
+      setText("counselorOutNoShow", ob.noShow);
+      setText("counselorOutCancelled", ob.cancelledByStudent);
       counselorChartDaily = bindOrUpdateLineChart(
         counselorChartDaily,
         "counselorChartDaily",
@@ -1049,6 +1451,11 @@ async function renderCounselorView(root, menu) {
 
 function renderGcoServicesPage(root) {
   const services = [
+    {
+      title: "Befriending",
+      body:
+        "Structured one-on-one support that helps students feel seen and connected. A counselor walks alongside you through adjustment, stress, or loneliness while linking you to other GCO services when you need more focused help."
+    },
     {
       title: "Counseling",
       body:
@@ -1100,42 +1507,265 @@ async function renderStudentView(root, menu) {
   if (menu === "Book Appointment") {
     await loadCounselors();
     const todayIso = new Date().toISOString().slice(0, 10);
-    const slotOptions = [
-      { value: "07:30", label: "07:30 AM - 08:30 AM" },
-      { value: "09:00", label: "09:00 AM - 10:00 AM" },
-      { value: "10:30", label: "10:30 AM - 11:30 AM" },
-      { value: "13:00", label: "01:00 PM - 02:00 PM" },
-      { value: "14:30", label: "02:30 PM - 03:30 PM" }
-    ];
+    if (!state.counselors?.length) {
+      root.innerHTML = `<div class="panel-header"><h2 class="section-title">Book Appointment</h2></div><p class="feedback feedback-error">No counselors are available yet. Please check back later.</p>`;
+      return;
+    }
+
     root.innerHTML = `
       <div class="panel-header"><h2 class="section-title">Book Appointment</h2></div>
       <form id="bookForm" class="stack-md">
-        <label class="field"><span>Counselor</span><select id="bookCounselor" required>${state.counselors.map((c) => `<option value="${c.id}">${c.name}</option>`).join("")}</select></label>
-        <label class="field"><span>Date</span><input type="date" id="bookDate" min="${todayIso}" required /></label>
-        <label class="field"><span>Time</span><select id="bookTime">${slotOptions.map((s) => `<option value="${s.value}">${s.label}</option>`).join("")}</select></label>
-        <label class="field"><span>Service Type</span><select id="bookService"><option value="Counseling">Counseling</option><option value="Academic/probation Follow up">Academic/probation Follow up</option><option value="Individual Inventory">Individual Inventory</option><option value="Placement Program">Placement Program</option><option value="Faculty/Parent Consultation">Faculty/Parent Consultation</option></select></label>
-        <label class="field"><span>Additional Information</span><textarea id="bookReason" placeholder="Tell us briefly what you need help with."></textarea></label>
-        <button type="submit" class="btn primary">Book</button>
+        <label class="field"><span>Counselor</span><select id="bookCounselor" required>${state.counselors.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("")}</select></label>
+        <div class="booking-meta-grid">
+          <label class="field"><span>Year Level</span><select id="bookYearLevel" required>${YEAR_LEVEL_OPTIONS.map((y) => `<option value="${y}">${y}</option>`).join("")}</select></label>
+          <label class="field"><span>College</span><select id="bookCollege" required>${COLLEGE_OPTIONS.map((c) => `<option value="${c}">${c}</option>`).join("")}</select></label>
+        </div>
+        <div id="studentCounselorCalendar" class="card stack-md student-calendar-card"></div>
+        <section id="bookingDetailsSection" class="booking-details-card stack-md">
+          <div class="booking-details-header">
+            <h3>Appointment Details</h3>
+            <p class="muted tiny" id="bookingDetailsHint">Pick a weekday on the calendar (Monday–Friday). Saturdays are closed for booking.</p>
+          </div>
+          <label class="field"><span>Date</span><input type="date" id="bookDate" min="${todayIso}" required /></label>
+            <label class="field"><span>Time</span><select id="bookTime" required><option value="">Choose counselor and date first</option></select></label>
+            <label class="field"><span>Service Type</span><select id="bookService" required><option value="">Loading…</option></select></label>
+          <label class="field"><span>Additional Information</span><textarea id="bookReason" placeholder="Tell us briefly what you need help with."></textarea></label>
+          <button type="submit" class="btn primary">Book Appointment</button>
+        </section>
       </form><p id="bookMsg" class="feedback"></p>`;
 
     const counselorSelect = document.getElementById("bookCounselor");
     const dateInput = document.getElementById("bookDate");
-    let unavailableDates = [];
+    const calendarWrap = document.getElementById("studentCounselorCalendar");
+    const currentYear = new Date().getFullYear();
+    let studentCalendarYear = currentYear;
+    let fullDayBlocks = new Set();
+    let partialBlocks = [];
+
+    const isoIsWeekend = (iso) => {
+      const d = new Date(`${iso}T12:00:00`);
+      const x = d.getDay();
+      return x === 0 || x === 6;
+    };
+
+    const fillServiceSelect = (serviceList) => {
+      const sel = document.getElementById("bookService");
+      if (!sel) return;
+      const prev = sel.value;
+      const list = Array.isArray(serviceList) ? serviceList : [];
+      sel.innerHTML = list.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
+      if (list.includes(prev)) sel.value = prev;
+    };
+
+    const fillTimeSelect = (slots) => {
+      const sel = document.getElementById("bookTime");
+      if (!sel) return;
+      if (!slots.length) {
+        sel.innerHTML = `<option value="">No open slots for this day</option>`;
+        sel.removeAttribute("required");
+        return;
+      }
+      sel.setAttribute("required", "required");
+      sel.innerHTML = slots
+        .map(
+          (s) =>
+            `<option value="${escapeHtml(s.value)}" data-duration="${Number(s.durationMinutes) || 60}">${escapeHtml(s.label)}</option>`
+        )
+        .join("");
+    };
+
+    const refreshTimeOptionsForDate = (date) => {
+      const timeSelect = document.getElementById("bookTime");
+      if (!timeSelect) return;
+      const blocksToday = partialBlocks.filter((b) => b.date === date);
+      Array.from(timeSelect.options).forEach((opt) => {
+        if (!opt.value) return;
+        if (!opt.dataset.baseLabel) opt.dataset.baseLabel = opt.textContent.replace(/\s*— Unavailable\s*$/, "").trim();
+        const slotStart = opt.value;
+        const dur = Number(opt.dataset.duration || 60);
+        const [h, m] = slotStart.split(":").map(Number);
+        const startMin = h * 60 + m;
+        const endMin = startMin + dur;
+        const eh = String(Math.floor(endMin / 60)).padStart(2, "0");
+        const em = String(endMin % 60).padStart(2, "0");
+        const slotEnd = `${eh}:${em}`;
+        const conflict = blocksToday.some((b) => {
+          const bs = (b.start || "00:00").slice(0, 5);
+          const be = (b.end || "23:59").slice(0, 5);
+          return slotStart < be && slotEnd > bs;
+        });
+        opt.disabled = conflict;
+        opt.textContent = conflict ? `${opt.dataset.baseLabel} — Unavailable` : opt.dataset.baseLabel;
+      });
+      const firstOk = Array.from(timeSelect.options).find((o) => o.value && !o.disabled);
+      if (firstOk) timeSelect.value = firstOk.value;
+    };
+
+    const applyBookingOptions = async () => {
+      const cid = counselorSelect.value;
+      const date = dateInput.value;
+      const hint = document.getElementById("bookingDetailsHint");
+      if (!cid) return;
+      try {
+        let url = `/utility/booking-options?counselorId=${encodeURIComponent(cid)}`;
+        if (date) url += `&date=${encodeURIComponent(date)}`;
+        const data = await api(url);
+        fillServiceSelect(data.services || []);
+        if (date) {
+          fillTimeSelect(data.slots || []);
+          if (data.dayNote && hint) hint.textContent = data.dayNote;
+          else if (hint) {
+            const partialToday = partialBlocks.filter((b) => b.date === date);
+            if (!(data.slots || []).length) {
+              hint.textContent = isoIsWeekend(date)
+                ? "Weekends are closed for booking. Please choose a weekday."
+                : "No time slots remain for this counselor on this date.";
+            } else if (partialToday.length) {
+              const ranges = partialToday.map((b) => `${b.start}–${b.end}`).join(", ");
+              hint.textContent = `Selected ${date}. Counselor is blocked ${ranges}; times below avoid those windows when possible.`;
+            } else {
+              hint.textContent = `Selected ${date}. Choose a time and add notes if you wish.`;
+            }
+          }
+          refreshTimeOptionsForDate(date);
+        } else {
+          const sel = document.getElementById("bookTime");
+          if (sel) {
+            sel.innerHTML = `<option value="">Choose a date on the calendar</option>`;
+            sel.removeAttribute("required");
+          }
+          if (hint) hint.textContent = "Pick a weekday on the calendar (Monday–Friday). Saturdays are closed for booking.";
+        }
+      } catch (err) {
+        const msg = document.getElementById("bookMsg");
+        if (msg) {
+          msg.textContent = err.message || "Could not load booking options.";
+          msg.className = "feedback feedback-error";
+        }
+      }
+    };
+
     const loadUnavailable = async () => {
       if (!counselorSelect.value) return;
-      const rows = await api(`/counselor/availability/${counselorSelect.value}`);
-      unavailableDates = rows.map((r) => String(r.unavailable_date).slice(0, 10));
+      const calendarData = await api(`/counselor/calendar?year=${studentCalendarYear}&counselorId=${counselorSelect.value}`);
+      const allRows = calendarData.unavailable || [];
+      fullDayBlocks = new Set(
+        allRows.filter((r) => !r.start_time && !r.end_time).map((r) => String(r.unavailable_date).slice(0, 10))
+      );
+      partialBlocks = allRows
+        .filter((r) => r.start_time || r.end_time)
+        .map((r) => ({
+          date: String(r.unavailable_date).slice(0, 10),
+          start: r.start_time ? String(r.start_time).slice(0, 5) : "00:00",
+          end: r.end_time ? String(r.end_time).slice(0, 5) : "23:59"
+        }));
+      if (dateInput.value) refreshTimeOptionsForDate(dateInput.value);
+      calendarWrap.innerHTML = `
+        <div class="year-header">
+          <div>
+            <h3>Counselor Calendar</h3>
+            <p class="muted tiny">Unavailable dates are blocked. Weekends cannot be booked. Click a weekday to fill the date.</p>
+          </div>
+          <div class="year-nav">
+            <button type="button" class="btn ghost" id="studentCalPrevYear">‹</button>
+            <strong>${studentCalendarYear}</strong>
+            <button type="button" class="btn ghost" id="studentCalNextYear">›</button>
+          </div>
+        </div>
+        <div class="calendar-legend">
+          <span><i class="dot available"></i>Available</span>
+          <span><i class="dot booked"></i>With appointments</span>
+          <span><i class="dot unavailable"></i>Unavailable</span>
+          <span><i class="dot today"></i>Today</span>
+        </div>
+        <div class="year-calendar-grid">${buildYearCalendar(studentCalendarYear, calendarData.appointments || [], calendarData.unavailable || [], { disableWeekendBooking: true })}</div>
+      `;
+      const today = new Date().toISOString().slice(0, 10);
+      calendarWrap.querySelectorAll(".calendar-day-btn").forEach((btn) => {
+        const selected = btn.dataset.date;
+        const isFullDayBlocked = fullDayBlocks.has(selected);
+        const isPast = selected < today;
+        const isWeekend = isoIsWeekend(selected);
+        if (isFullDayBlocked || isPast || isWeekend) {
+          btn.disabled = true;
+          btn.classList.add("disabled");
+          btn.title = isWeekend ? "No bookings on weekends" : isFullDayBlocked ? "Counselor unavailable all day" : "Past date";
+        } else {
+          const partialToday = partialBlocks.filter((b) => b.date === selected);
+          if (partialToday.length) {
+            const ranges = partialToday.map((b) => `${b.start} – ${b.end}`).join(", ");
+            btn.title = `Partially blocked: ${ranges}. Other times may still be available.`;
+          }
+          btn.onclick = () => {
+            dateInput.value = selected;
+            dateInput.dispatchEvent(new Event("change", { bubbles: true }));
+            const detailsSection = document.getElementById("bookingDetailsSection");
+            const hint = document.getElementById("bookingDetailsHint");
+            if (hint) {
+              if (partialToday.length) {
+                const ranges = partialToday.map((b) => `${b.start}–${b.end}`).join(", ");
+                hint.textContent = `Selected ${selected}. Counselor is unavailable ${ranges}; other slots may still be open.`;
+              }
+            }
+            if (detailsSection) {
+              detailsSection.classList.add("highlight");
+              detailsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+              setTimeout(() => detailsSection.classList.remove("highlight"), 1600);
+              const timeSelect = document.getElementById("bookTime");
+              if (timeSelect) setTimeout(() => timeSelect.focus(), 450);
+            }
+          };
+        }
+      });
+      document.getElementById("studentCalPrevYear").onclick = async () => {
+        studentCalendarYear -= 1;
+        await loadUnavailable();
+        await applyBookingOptions();
+      };
+      document.getElementById("studentCalNextYear").onclick = async () => {
+        studentCalendarYear += 1;
+        await loadUnavailable();
+        await applyBookingOptions();
+      };
     };
-    counselorSelect.onchange = loadUnavailable;
+
+    counselorSelect.onchange = async () => {
+      await loadUnavailable();
+      await applyBookingOptions();
+    };
+
     await loadUnavailable();
-    dateInput.onchange = () => dateInput.setCustomValidity(unavailableDates.includes(dateInput.value) ? "Selected date is unavailable for this counselor." : "");
+    await applyBookingOptions();
+
+    dateInput.onchange = async () => {
+      const v = dateInput.value;
+      if (isoIsWeekend(v)) {
+        dateInput.setCustomValidity("Bookings are only available Monday through Friday (weekends are closed).");
+      } else if (fullDayBlocks.has(v)) {
+        dateInput.setCustomValidity("Selected date is fully unavailable for this counselor.");
+      } else {
+        dateInput.setCustomValidity("");
+      }
+      await applyBookingOptions();
+    };
+
     document.getElementById("bookForm").onsubmit = async (e) => {
       e.preventDefault();
+      const timeEl = document.getElementById("bookTime");
+      const serviceEl = document.getElementById("bookService");
+      if (!timeEl.value || timeEl.selectedOptions[0]?.disabled) {
+        const msg = document.getElementById("bookMsg");
+        msg.textContent = "Please choose an available time slot.";
+        msg.className = "feedback feedback-error";
+        return;
+      }
       const payload = {
         counselorId: Number(counselorSelect.value),
+        yearLevel: document.getElementById("bookYearLevel").value,
+        college: document.getElementById("bookCollege").value,
         date: dateInput.value,
-        time: document.getElementById("bookTime").value,
-        serviceType: document.getElementById("bookService").value,
+        time: timeEl.value,
+        serviceType: serviceEl.value,
         reason: document.getElementById("bookReason").value.trim()
       };
       const msg = document.getElementById("bookMsg");
@@ -1145,7 +1775,7 @@ async function renderStudentView(root, menu) {
         msg.className = "feedback status-success";
       } catch (err) {
         msg.textContent = err.message;
-        msg.style.color = "#b91c1c";
+        msg.className = "feedback feedback-error";
       }
     };
     return;
@@ -1172,7 +1802,7 @@ async function renderStudentView(root, menu) {
     root.innerHTML = `
       <div class="panel-header"><h2 class="section-title">Appointment History</h2></div>
       <div class="table-wrap"><table><thead><tr><th>Code</th><th>Date</th><th>Time</th><th>Status</th><th>Your cancellation reason</th><th>Action</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
-      <div id="studentCancelModal" class="modal hidden" style="display:none;">
+      <div id="studentCancelModal" class="modal hidden">
         <div class="modal-content stack-md">
           <h3 id="studentCancelTitle">Cancel appointment</h3>
           <p class="muted tiny">Counselors and admin will see this reason.</p>
@@ -1211,7 +1841,7 @@ async function renderStudentView(root, menu) {
       const reason = reasonInput.value.trim();
       if (reason.length < 5) {
         msg.textContent = "Please enter at least 5 characters.";
-        msg.style.color = "#b91c1c";
+        msg.className = "feedback feedback-error";
         return;
       }
       if (!pendingCancelId) return;
@@ -1226,7 +1856,7 @@ async function renderStudentView(root, menu) {
         await renderStudentView(root, menu);
       } catch (err) {
         msg.textContent = err.message;
-        msg.style.color = "#b91c1c";
+        msg.className = "feedback feedback-error";
       }
     };
     document.querySelectorAll(".student-cancel-appt").forEach((btn) => {
@@ -1313,7 +1943,7 @@ async function renderAdminReportsPage(root) {
           msg.className = "feedback status-success";
         } catch (e) {
           msg.textContent = e.message;
-          msg.style.color = "#b91c1c";
+          msg.className = "feedback feedback-error";
         }
       };
       document.getElementById("dlAuditCsv").onclick = async () => {
@@ -1324,7 +1954,7 @@ async function renderAdminReportsPage(root) {
           msg.className = "feedback status-success";
         } catch (e) {
           msg.textContent = e.message;
-          msg.style.color = "#b91c1c";
+          msg.className = "feedback feedback-error";
         }
       };
       document.getElementById("dlSummaryJson").onclick = async () => {
@@ -1342,7 +1972,7 @@ async function renderAdminReportsPage(root) {
           msg.className = "feedback status-success";
         } catch (e) {
           msg.textContent = e.message;
-          msg.style.color = "#b91c1c";
+          msg.className = "feedback feedback-error";
         }
       };
       shellReady = true;
@@ -1370,6 +2000,209 @@ async function renderAdminReportsPage(root) {
 }
 
 async function renderAdminAnalyticsPage(root) {
+  const [users, distinct] = await Promise.all([api("/admin/users"), api("/admin/analytics/distinct").catch(() => ({ services: [], yearLevels: [], colleges: [] }))]);
+  const counselors = users.filter((u) => u.role === "counselor" && u.is_active);
+  const selectedCounselorIds = new Set();
+  let selectedService = "";
+  let selectedYearLevel = "";
+  let selectedCollege = "";
+
+  const SERVICE_OPTIONS = [
+    "Befriending",
+    "Counseling",
+    "Academic/Probation Follow up",
+    "Individual Inventory",
+    "Placement Program",
+    "Faculty/Parent Consultation"
+  ];
+  const allServices = Array.from(new Set([...SERVICE_OPTIONS, ...(distinct.services || [])]));
+  const allYearLevels = Array.from(new Set(["1st Year", "2nd Year", "3rd Year", "4th Year", ...(distinct.yearLevels || [])]));
+  const COLLEGE_OPTIONS_LOCAL = [
+    "College of Arts and Sciences",
+    "College of Computer Studies",
+    "School of Education",
+    "School of Law",
+    "College of Engineering",
+    "School of Business and Management",
+    "School of Medicine",
+    "College of Nursing",
+    "College of Agriculture"
+  ];
+  const allColleges = Array.from(new Set([...COLLEGE_OPTIONS_LOCAL, ...(distinct.colleges || [])]));
+
+  let chartDayStart = "";
+  let chartMonthStart = "";
+
+  const fetchAndRender = async () => {
+    const params = new URLSearchParams();
+    if (selectedCounselorIds.size) params.set("counselorIds", Array.from(selectedCounselorIds).join(","));
+    if (selectedService) params.set("serviceType", selectedService);
+    if (selectedYearLevel) params.set("yearLevel", selectedYearLevel);
+    if (selectedCollege) params.set("college", selectedCollege);
+    if (chartDayStart) params.set("daysFromDate", chartDayStart);
+    if (chartMonthStart) params.set("monthsFromMonth", chartMonthStart);
+    const data = await api(`/admin/analytics/breakdown?${params.toString()}`);
+    paint(data);
+  };
+
+  const paint = (data) => {
+    const t = data.totals;
+    const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    setText("admBreakTotal", t.total);
+    setText("admBreakAccepted", t.accepted);
+    setText("admBreakDone", t.done);
+    setText("admBreakReferred", t.referred);
+    setText("admBreakNoShow", t.noShow);
+    setText("admBreakCancelled", t.cancelledByStudent);
+    setText("admBreakDeclined", t.declined);
+    setText("admBreakPending", t.pending);
+    adminChartDaily = bindOrUpdateLineChart(
+      adminChartDaily,
+      "adminChartDaily",
+      data.chart30Days.map((d) => d.label),
+      data.chart30Days.map((d) => d.sessions),
+      "Appointments",
+      "#1a367c"
+    );
+    adminChartMonthly = bindOrUpdateLineChart(
+      adminChartMonthly,
+      "adminChartMonthly",
+      data.chart12Months.map((d) => d.label),
+      data.chart12Months.map((d) => d.sessions),
+      "Appointments",
+      "#b8891b"
+    );
+    const updated = document.getElementById("adminAnUpdated");
+    if (updated) updated.textContent = `Last updated: ${new Date().toLocaleString()}`;
+    const dayLabel = document.getElementById("chartDayRangeLabel");
+    if (dayLabel && data.chart30Days?.length) {
+      const first = data.chart30Days[0];
+      const last = data.chart30Days[data.chart30Days.length - 1];
+      dayLabel.textContent = `Window: ${first.date} → ${last.date}`;
+    }
+    const monthLabel = document.getElementById("chartMonthRangeLabel");
+    if (monthLabel && data.chart12Months?.length) {
+      const first = data.chart12Months[0];
+      const last = data.chart12Months[data.chart12Months.length - 1];
+      monthLabel.textContent = `Window: ${first.label} → ${last.label}`;
+    }
+  };
+
+  root.innerHTML = `
+    <div class="panel-header"><h2 class="section-title">Counselor Analytics</h2></div>
+    <div class="card stack-md section-block">
+      <h3 class="subsection-title filter-heading-reset">Filters</h3>
+      <div class="filter-grid">
+        <label class="field">
+          <span>Counselors</span>
+          <div class="counselor-picker">
+            <button type="button" class="chip chip-active" id="counselorAllBtn" data-id="all">All counselors</button>
+            <select id="counselorDropdown" class="counselor-select">
+              <option value="">— Select a specific counselor —</option>
+              ${counselors.map((c) => `<option value="${c.id}">${escapeHtml(c.full_name)}</option>`).join("")}
+            </select>
+          </div>
+        </label>
+        <label class="field">
+          <span>Service Type</span>
+          <select id="filterService"><option value="">All services</option>${allServices.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("")}</select>
+        </label>
+        <label class="field">
+          <span>Year Level</span>
+          <select id="filterYearLevel"><option value="">All year levels</option>${allYearLevels.map((y) => `<option value="${escapeHtml(y)}">${escapeHtml(y)}</option>`).join("")}</select>
+        </label>
+        <label class="field">
+          <span>College</span>
+          <select id="filterCollege"><option value="">All colleges</option>${allColleges.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("")}</select>
+        </label>
+      </div>
+      <p class="muted tiny">Click "All counselors" to clear filters, or pick one counselor from the dropdown.</p>
+    </div>
+    <div class="grid-4 outcome-grid">
+      <div class="kpi"><p>Total appointments</p><strong id="admBreakTotal">0</strong></div>
+      <div class="kpi"><p>Accepted</p><strong id="admBreakAccepted">0</strong></div>
+      <div class="kpi"><p>Pending</p><strong id="admBreakPending">0</strong></div>
+      <div class="kpi"><p>Declined</p><strong id="admBreakDeclined">0</strong></div>
+    </div>
+    <div class="grid-4 outcome-grid u-mt-sm">
+      <div class="kpi outcome-card done"><p>Done</p><strong id="admBreakDone">0</strong></div>
+      <div class="kpi outcome-card referred"><p>Referred</p><strong id="admBreakReferred">0</strong></div>
+      <div class="kpi outcome-card no-show"><p>No-show</p><strong id="admBreakNoShow">0</strong></div>
+      <div class="kpi outcome-card cancelled"><p>Cancelled by student</p><strong id="admBreakCancelled">0</strong></div>
+    </div>
+    <div class="analytics-charts-row">
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <h4 class="chart-card-title">Daily trend (30 days)</h4>
+          <label class="chart-range-input">
+            <span>Start date</span>
+            <input type="date" id="chartDayStartInput" />
+          </label>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="adminChartDaily"></canvas></div>
+        <p class="muted tiny" id="chartDayRangeLabel"></p>
+      </div>
+      <div class="chart-card">
+        <div class="chart-card-head">
+          <h4 class="chart-card-title">Monthly trend (12 months)</h4>
+          <label class="chart-range-input">
+            <span>Start month</span>
+            <input type="month" id="chartMonthStartInput" />
+          </label>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="adminChartMonthly"></canvas></div>
+        <p class="muted tiny" id="chartMonthRangeLabel"></p>
+      </div>
+    </div>
+    <p id="adminAnUpdated" class="muted tiny"></p>`;
+
+  const allBtn = document.getElementById("counselorAllBtn");
+  const counselorDropdown = document.getElementById("counselorDropdown");
+  const refreshCounselorActiveState = () => {
+    const noneSelected = selectedCounselorIds.size === 0;
+    allBtn.classList.toggle("chip-active", noneSelected);
+    counselorDropdown.value = noneSelected ? "" : String(Array.from(selectedCounselorIds)[0] || "");
+  };
+  allBtn.addEventListener("click", () => {
+    selectedCounselorIds.clear();
+    refreshCounselorActiveState();
+    fetchAndRender().catch(() => {});
+  });
+  counselorDropdown.addEventListener("change", (e) => {
+    const v = Number(e.target.value);
+    selectedCounselorIds.clear();
+    if (Number.isInteger(v) && v > 0) selectedCounselorIds.add(v);
+    refreshCounselorActiveState();
+    fetchAndRender().catch(() => {});
+  });
+
+  document.getElementById("filterService").addEventListener("change", (e) => {
+    selectedService = e.target.value;
+    fetchAndRender().catch(() => {});
+  });
+  document.getElementById("filterYearLevel").addEventListener("change", (e) => {
+    selectedYearLevel = e.target.value;
+    fetchAndRender().catch(() => {});
+  });
+  document.getElementById("filterCollege").addEventListener("change", (e) => {
+    selectedCollege = e.target.value;
+    fetchAndRender().catch(() => {});
+  });
+  document.getElementById("chartDayStartInput").addEventListener("change", (e) => {
+    chartDayStart = e.target.value;
+    fetchAndRender().catch(() => {});
+  });
+  document.getElementById("chartMonthStartInput").addEventListener("change", (e) => {
+    chartMonthStart = e.target.value;
+    fetchAndRender().catch(() => {});
+  });
+
+  await fetchAndRender();
+  adminSectionPollTimer = setInterval(() => fetchAndRender().catch(() => {}), 18000);
+  return;
+}
+
+async function renderAdminAnalyticsPage_legacy(root) {
   const users = await api("/admin/users");
   const counselors = users.filter((u) => u.role === "counselor" && u.is_active);
   let selectedId = counselors.length ? counselors[0].id : null;
@@ -1386,7 +2219,7 @@ async function renderAdminAnalyticsPage(root) {
     if (!root.querySelector("#adminAnalyticsSelect")) {
       root.innerHTML = `
         <div class="panel-header"><h2 class="section-title">Counselor Analytics</h2></div>
-        <div class="card stack-md" style="margin-bottom:1rem;">
+        <div class="card stack-md section-block">
           <label class="field"><span>Counselor</span><select id="adminAnalyticsSelect"></select></label>
           <p class="muted tiny">KPIs and charts count <strong>approved sessions</strong> (status: accepted) by appointment date. Updates every few seconds while you stay on this page.</p>
         </div>
@@ -1462,7 +2295,7 @@ async function renderAdminView(root, menu) {
   if (menu === "Settings") {
     root.innerHTML = `
       <div class="panel-header"><h2 class="section-title">Settings</h2></div>
-      <div class="card stack-md" style="margin-bottom:1rem;">
+      <div class="card stack-md section-block">
         <h3>CSV Upload (Google Sheets Integration)</h3>
         <form id="adminCsvImportForm" class="stack-md">
           <input type="file" id="adminCsvFile" accept=".csv" required />
@@ -1470,7 +2303,7 @@ async function renderAdminView(root, menu) {
         </form>
         <p id="adminCsvMsg" class="feedback"></p>
       </div>
-      <div class="card stack-md" style="margin-bottom:1rem;">
+      <div class="card stack-md section-block">
         <h3>Google Sheets API Sync</h3>
         <form id="adminSheetSyncForm" class="stack-md">
           <label class="field"><span>Spreadsheet ID</span><input id="sheetId" type="text" placeholder="e.g., 1AbC..." required /></label>
@@ -1495,7 +2328,7 @@ async function renderAdminView(root, menu) {
         msg.className = "feedback status-success";
       } catch (err) {
         msg.textContent = err.message;
-        msg.style.color = "#b91c1c";
+        msg.className = "feedback feedback-error";
       }
     };
     document.getElementById("adminSheetSyncForm").onsubmit = async (e) => {
@@ -1513,7 +2346,7 @@ async function renderAdminView(root, menu) {
         msg.className = "feedback status-success";
       } catch (err) {
         msg.textContent = err.message;
-        msg.style.color = "#b91c1c";
+        msg.className = "feedback feedback-error";
       }
     };
     return;
@@ -1522,20 +2355,35 @@ async function renderAdminView(root, menu) {
     const users = await api("/admin/users");
     root.innerHTML = `
       <div class="panel-header"><h2 class="section-title">User Management</h2></div>
-      <div class="card stack-md" style="margin-bottom:1rem;">
+      <div class="card stack-md section-block">
         <h3>Create Account</h3>
         <form id="createUserForm" class="grid-4">
           <input id="newUserName" type="text" placeholder="Full name" required />
           <input id="newUserEmail" type="email" placeholder="Email" required />
           <select id="newUserRole"><option value="student">Student</option><option value="counselor">Counselor</option><option value="admin">Admin</option></select>
-          <input id="newUserPassword" type="password" placeholder="Password (min 8)" minlength="8" required />
+          <input id="newUserPassword" type="password" placeholder="Password (min 10, strong)" minlength="10" required />
           <button class="btn primary" type="submit">Create</button>
         </form>
       </div>
-      <div class="table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Action</th></tr></thead><tbody>${users.map((u) => `<tr><td>${u.id}</td><td>${u.full_name}</td><td>${u.email}</td><td>${u.role}</td><td>${u.is_active ? "Active" : "Inactive"}</td><td><button class="btn ghost admin-delete-user" data-id="${u.id}" data-email="${u.email}">Delete</button></td></tr>`).join("")}</tbody></table></div><p id="adminUserMsg" class="feedback"></p>`;
+      <div class="table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Action</th></tr></thead><tbody>${users.map((u) => `<tr><td>${u.id}</td><td>${u.full_name}</td><td>${u.email}</td><td>${u.role}</td><td>${u.is_active ? "Active" : "Inactive"}</td><td><button type="button" class="btn danger admin-delete-user" data-id="${u.id}" data-email="${u.email}">Delete</button></td></tr>`).join("")}</tbody></table></div><p id="adminUserMsg" class="feedback"></p>`;
+    attachPasswordToggle(document.getElementById("newUserPassword"), "new user password");
+    const adminPassField = document.getElementById("newUserPassword")?.parentElement;
+    if (adminPassField) {
+      const adminStrength = document.createElement("p");
+      adminStrength.className = "muted tiny";
+      adminPassField.appendChild(adminStrength);
+      attachPasswordStrength(document.getElementById("newUserPassword"), adminStrength);
+    }
     document.getElementById("createUserForm").onsubmit = async (e) => {
       e.preventDefault();
       const msg = document.getElementById("adminUserMsg");
+      const password = document.getElementById("newUserPassword").value;
+      const strong = validateStrongPassword(password);
+      if (!strong.ok) {
+        msg.textContent = strong.message;
+        msg.className = "feedback feedback-error";
+        return;
+      }
       try {
         await api("/admin/users", {
           method: "POST",
@@ -1543,7 +2391,7 @@ async function renderAdminView(root, menu) {
             fullName: document.getElementById("newUserName").value.trim(),
             email: document.getElementById("newUserEmail").value.trim().toLowerCase(),
             role: document.getElementById("newUserRole").value,
-            password: document.getElementById("newUserPassword").value
+            password
           })
         });
         msg.textContent = "User account created.";
@@ -1551,12 +2399,14 @@ async function renderAdminView(root, menu) {
         await renderAdminView(root, menu);
       } catch (err) {
         msg.textContent = err.message;
-        msg.style.color = "#b91c1c";
+        msg.className = "feedback feedback-error";
       }
     };
     document.querySelectorAll(".admin-delete-user").forEach((btn) => {
       btn.onclick = async () => {
-        const ok = confirm(`Delete user ${btn.dataset.email}? This also removes linked appointments and notifications.`);
+        const ok = confirm(
+          `Permanently delete this user?\n\n${btn.dataset.email}\n\nLinked appointments and notifications will be removed. This cannot be undone.`
+        );
         if (!ok) return;
         const msg = document.getElementById("adminUserMsg");
         try {
@@ -1566,7 +2416,7 @@ async function renderAdminView(root, menu) {
           await renderAdminView(root, menu);
         } catch (err) {
           msg.textContent = err.message;
-          msg.style.color = "#b91c1c";
+          msg.className = "feedback feedback-error";
         }
       };
     });
@@ -1574,9 +2424,10 @@ async function renderAdminView(root, menu) {
   }
   if (menu === "Appointments") {
     const rows = await api("/appointments/my");
-    root.innerHTML = `<div class="panel-header"><h2 class="section-title">Appointments</h2></div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Student</th><th>Counselor</th><th>Date</th><th>Time</th><th>Status</th><th>Student cancellation</th><th>Action</th></tr></thead><tbody>${rows.map((a) => `<tr><td>${escapeHtml(a.booking_code)}</td><td>${escapeHtml(a.student_name || "—")}</td><td>${escapeHtml(a.counselor_name || "—")}</td><td>${a.appointment_date}</td><td>${String(a.appointment_time).slice(0, 5)}</td><td>${a.status}</td><td>${a.student_cancellation_reason ? escapeHtml(a.student_cancellation_reason) : "—"}</td><td><button class="btn ghost admin-resched" data-id="${a.id}">Request Reschedule</button><button class="btn ghost admin-delete-appt" data-id="${a.id}">Delete</button></td></tr>`).join("")}</tbody></table></div><p id="adminApptMsg" class="feedback"></p>`;
+    root.innerHTML = `<div class="panel-header"><h2 class="section-title">Appointments</h2></div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Student</th><th>Counselor</th><th>Date</th><th>Time</th><th>Status</th><th>Student cancellation</th><th>Action</th></tr></thead><tbody>${rows.map((a) => `<tr><td>${escapeHtml(a.booking_code)}</td><td>${escapeHtml(a.student_name || "—")}</td><td>${escapeHtml(a.counselor_name || "—")}</td><td>${a.appointment_date}</td><td>${String(a.appointment_time).slice(0, 5)}</td><td>${a.status}</td><td>${a.student_cancellation_reason ? escapeHtml(a.student_cancellation_reason) : "—"}</td><td><button type="button" class="btn ghost admin-resched" data-id="${a.id}">Request Reschedule</button><button type="button" class="btn danger admin-delete-appt" data-id="${a.id}">Delete</button></td></tr>`).join("")}</tbody></table></div><p id="adminApptMsg" class="feedback"></p>`;
     document.querySelectorAll(".admin-resched").forEach((btn) => {
       btn.onclick = async () => {
+        if (!confirm("Are you sure you want to reschedule this?")) return;
         const msg = document.getElementById("adminApptMsg");
         try {
           await api(`/appointments/${btn.dataset.id}/status`, { method: "PATCH", body: JSON.stringify({ status: "reschedule_requested" }) });
@@ -1585,14 +2436,13 @@ async function renderAdminView(root, menu) {
           await renderAdminView(root, menu);
         } catch (err) {
           msg.textContent = err.message;
-          msg.style.color = "#b91c1c";
+          msg.className = "feedback feedback-error";
         }
       };
     });
     document.querySelectorAll(".admin-delete-appt").forEach((btn) => {
       btn.onclick = async () => {
-        const ok = confirm("Delete this appointment permanently? This will remove it from the database.");
-        if (!ok) return;
+        if (!confirm("Are you sure you want to delete this?")) return;
         const msg = document.getElementById("adminApptMsg");
         try {
           await api(`/admin/appointments/${btn.dataset.id}`, { method: "DELETE" });
@@ -1601,7 +2451,7 @@ async function renderAdminView(root, menu) {
           await renderAdminView(root, menu);
         } catch (err) {
           msg.textContent = err.message;
-          msg.style.color = "#b91c1c";
+          msg.className = "feedback feedback-error";
         }
       };
     });
@@ -1612,7 +2462,7 @@ async function renderAdminView(root, menu) {
     const year = state.calendarYear || new Date().getFullYear();
     root.innerHTML = `
       <div class="panel-header"><h2 class="section-title">Counselor Calendar</h2></div>
-      <div class="card stack-md" style="margin-bottom:1rem;">
+      <div class="card stack-md section-block">
         <label class="field"><span>Select Counselor</span><select id="adminCounselorSelect">${state.counselors.map((c) => `<option value="${c.id}">${c.name}</option>`).join("")}</select></label>
         <div class="auth-actions"><button id="adminLoadCalendar" class="btn primary">Load Calendar</button></div>
       </div>
@@ -1689,8 +2539,25 @@ async function renderAdminView(root, menu) {
   adminOverviewPollTimer = setInterval(refreshAdminOverview, 12000);
 }
 
+function consumeOAuthTokenFromHash() {
+  const raw = window.location.hash || "";
+  if (!raw.includes("gco_token=")) return;
+  try {
+    const params = new URLSearchParams(raw.replace(/^#/, ""));
+    const t = params.get("gco_token");
+    if (t) {
+      localStorage.setItem("gco_token", t);
+      state.token = t;
+    }
+  } catch (_e) {
+    /* ignore */
+  }
+  history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+}
+
 async function initApp() {
   setupLogoDisplay();
+  consumeOAuthTokenFromHash();
   const path = (window.location.pathname || "/").replace(/\/$/, "") || "/";
   const headers = {};
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
@@ -1737,7 +2604,9 @@ window.addEventListener("popstate", () => {
   if (m && DASHBOARD_MENUS[state.user.role].includes(m)) {
     state.activeMenu = m;
     setDashboardDocumentTitle(m);
-    renderDashboard(state.user.role);
+    if (!applyDashboardSection(state.user.role, m)) {
+      renderDashboard(state.user.role);
+    }
   }
 });
 

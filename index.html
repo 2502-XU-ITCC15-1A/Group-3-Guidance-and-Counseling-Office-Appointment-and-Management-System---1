@@ -7,32 +7,43 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css?v=gco2026-9" />
+  <link rel="stylesheet" href="/style.css?v=gco2026-ui-23" />
 </head>
 <body>
+  <a href="#appRoot" class="skip-link">Skip to main content</a>
   <div class="app-shell">
     <header class="top-bar">
-      <div class="brand">
-        <div class="logo-wrap" aria-label="School logo area">
-          <img id="schoolLogo" class="logo-img" src="/assets/xu-logo.png" alt="Xavier University logo" />
-          <div id="logoFallback" class="logo" aria-hidden="true">XU</div>
+      <div class="top-bar-inner">
+        <div class="brand">
+          <div class="logo-wrap" aria-label="School logo area">
+            <img id="schoolLogo" class="logo-img" src="/assets/gcologo.jpg" alt="Xavier University logo" />
+            <div id="logoFallback" class="logo" aria-hidden="true">XU</div>
+          </div>
+          <div class="brand-copy">
+            <p class="brand-title">Xavier University - Ateneo de Cagayan</p>
+            <p class="brand-subtitle">Guidance and Counseling Office</p>
+          </div>
         </div>
-        <div class="brand-copy">
-          <p class="brand-title">Xavier University - Ateneo de Cagayan</p>
-          <p class="brand-subtitle">Guidance and Counseling Office</p>
+        <div class="top-bar-actions">
+          <button id="notifBellBtn" type="button" class="notif-bell hidden" aria-label="Notifications">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+              <path fill="currentColor" d="M12 2a1.5 1.5 0 0 0-1.5 1.5v.6A6.5 6.5 0 0 0 5.5 10.5V14l-1.6 2.4A1 1 0 0 0 4.7 18h14.6a1 1 0 0 0 .8-1.6L18.5 14v-3.5a6.5 6.5 0 0 0-5-6.4v-.6A1.5 1.5 0 0 0 12 2zm-2 18a2 2 0 0 0 4 0h-4z"/>
+            </svg>
+            <span id="notifBellBadge" class="notif-bell-badge hidden">0</span>
+          </button>
+          <button id="logoutBtn" class="btn ghost hidden">Logout</button>
         </div>
       </div>
-      <button id="logoutBtn" class="btn ghost hidden">Logout</button>
     </header>
 
-    <main id="appRoot"></main>
+    <main id="appRoot" tabindex="-1"></main>
   </div>
 
   <template id="roleSelectTpl">
     <section class="auth-layout">
       <div class="auth-visual">
         <div class="auth-visual-card">
-          <img class="hero-logo" src="/assets/xu-logo.png" alt="Xavier University logo" />
+          <img class="hero-logo" src="/assets/gcologo.jpg" alt="Xavier University logo" />
           <p class="hero-caption">Guidance and Counseling Office</p>
         </div>
       </div>
@@ -54,13 +65,12 @@
     <section class="auth-layout">
       <div class="auth-visual">
         <div class="auth-visual-card">
-          <img class="hero-logo" src="/assets/xu-logo.png" alt="Xavier University logo" />
+          <img class="hero-logo" src="/assets/gcologo.jpg" alt="Xavier University logo" />
           <p class="hero-caption">Guidance and Counseling Office</p>
         </div>
       </div>
       <section class="auth-panel">
         <h2 class="minimal-title">Student Portal</h2>
-        <p class="muted tiny">Use your school Google account (@my.xu.edu.ph or @xu.edu.ph).</p>
         <p id="studentGoogleMessage" class="feedback hidden" aria-live="polite"></p>
         <div class="auth-actions" style="margin-top:0.75rem;">
           <button type="button" class="btn primary" id="studentGoogleBtn">Login using Google</button>
@@ -74,13 +84,12 @@
     <section class="auth-layout">
       <div class="auth-visual">
         <div class="auth-visual-card">
-          <img class="hero-logo" src="/assets/xu-logo.png" alt="Xavier University logo" />
+          <img class="hero-logo" src="/assets/gcologo.jpg" alt="Xavier University logo" />
           <p class="hero-caption">Secure counseling portal.</p>
         </div>
       </div>
       <section class="auth-panel">
         <h2 id="loginRoleLabel" class="minimal-title"></h2>
-        <p class="muted tiny">Manual portal (<span id="roleEmailHint"></span>)</p>
         <div id="loginPane" class="stack-md">
           <form id="loginForm" class="stack-md">
             <label class="field">
@@ -111,7 +120,7 @@
             </label>
             <label class="field">
               <span>Password</span>
-              <input type="password" id="signupPassword" minlength="8" required />
+              <input type="password" id="signupPassword" minlength="10" required />
             </label>
             <div class="auth-actions">
               <button type="submit" class="btn primary">Create account</button>
@@ -138,9 +147,12 @@
             <img id="sidebarProfileImg" class="sidebar-avatar-img hidden" alt="User profile" />
             <div id="sidebarAvatarFallback" class="sidebar-avatar-fallback">U</div>
           </div>
-          <div>
+          <div class="sidebar-profile-text">
             <h3 id="roleDashboardLabel"></h3>
-            <p id="sidebarUserMeta" class="muted tiny"></p>
+          </div>
+          <div class="sidebar-profile-details">
+            <p id="sidebarUserEmail" class="muted tiny sidebar-user-email"></p>
+            <p id="sidebarUserRole" class="muted tiny sidebar-user-role"></p>
             <p id="sidebarRoleDesc" class="sidebar-meta"></p>
           </div>
         </div>
@@ -153,7 +165,7 @@
   </template>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="/script.js?v=gco2026-9"></script>
+<script src="/script.js?v=gco2026-ui-24"></script>
 </body>
 
 </html>

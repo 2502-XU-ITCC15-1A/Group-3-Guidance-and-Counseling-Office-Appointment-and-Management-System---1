@@ -51,6 +51,8 @@ async function initDb() {
       counselor_id INT NOT NULL,
       service_type VARCHAR(120) NOT NULL,
       reason TEXT,
+      year_level VARCHAR(40) NULL,
+      college VARCHAR(180) NULL,
       student_cancellation_reason TEXT NULL,
       appointment_date DATE NOT NULL,
       appointment_time TIME NOT NULL,
@@ -67,6 +69,18 @@ async function initDb() {
     "appointments",
     "student_cancellation_reason",
     "ALTER TABLE appointments ADD COLUMN student_cancellation_reason TEXT NULL"
+  );
+  await ensureColumn(db, "appointments", "year_level", "ALTER TABLE appointments ADD COLUMN year_level VARCHAR(40) NULL");
+  await ensureColumn(db, "appointments", "college", "ALTER TABLE appointments ADD COLUMN college VARCHAR(180) NULL");
+  await ensureColumn(db, "appointments", "outcome", "ALTER TABLE appointments ADD COLUMN outcome ENUM('done','referred','no_show') NULL");
+  await ensureColumn(db, "appointments", "outcome_at", "ALTER TABLE appointments ADD COLUMN outcome_at DATETIME NULL");
+  await ensureColumn(db, "appointments", "outcome_by", "ALTER TABLE appointments ADD COLUMN outcome_by INT NULL");
+  await ensureColumn(db, "appointments", "outcome_note", "ALTER TABLE appointments ADD COLUMN outcome_note TEXT NULL");
+  await ensureColumn(
+    db,
+    "appointments",
+    "session_duration_minutes",
+    "ALTER TABLE appointments ADD COLUMN session_duration_minutes TINYINT UNSIGNED DEFAULT 60"
   );
 
   await db.query(`
@@ -106,16 +120,32 @@ async function initDb() {
   `);
 
   await db.query(`
+    CREATE TABLE IF NOT EXISTS appointment_reminders (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      appointment_id INT NOT NULL,
+      reminder_type ENUM('1day','1hour') NOT NULL,
+      sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_appt_type (appointment_id, reminder_type),
+      FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE
+    )
+  `);
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS counselor_unavailabilities (
       id INT AUTO_INCREMENT PRIMARY KEY,
       counselor_id INT NOT NULL,
       unavailable_date DATE NOT NULL,
+      start_time TIME NULL,
+      end_time TIME NULL,
       message TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (counselor_id) REFERENCES users(id) ON DELETE CASCADE,
       UNIQUE KEY unique_counselor_date (counselor_id, unavailable_date)
     )
   `);
+  await ensureColumn(db, "counselor_unavailabilities", "start_time", "ALTER TABLE counselor_unavailabilities ADD COLUMN start_time TIME NULL");
+  await ensureColumn(db, "counselor_unavailabilities", "end_time", "ALTER TABLE counselor_unavailabilities ADD COLUMN end_time TIME NULL");
+  await dropUniqueKeyIfExists(db, "counselor_unavailabilities", "unique_counselor_date");
 
   const [rows] = await db.query("SELECT COUNT(*) AS total FROM users");
   if (rows[0].total === 0) {
@@ -136,6 +166,29 @@ async function initDb() {
 
   await db.query("UPDATE users SET email_verified = 1 WHERE email IN ('student@my.xu.edu.ph','counselor@xu.edu.ph','admin@xu.edu.ph')");
   await db.query("UPDATE users SET verification_token = NULL, verification_expires_at = NULL WHERE email_verified = 1");
+
+  await seedDirectoryCounselors(db);
+}
+
+async function seedDirectoryCounselors(db) {
+  const roster = [
+    ["Sir Bobby", "sir.bobby@xu.edu.ph"],
+    ["Sir Larry", "sir.larry@xu.edu.ph"],
+    ["Ma'am Chaisa", "maam.chaisa@xu.edu.ph"],
+    ["Ma'am Faith", "maam.faith@xu.edu.ph"],
+    ["Sir Sean", "sir.sean@xu.edu.ph"],
+    ["Doc Jegonia", "doc.jegonia@xu.edu.ph"]
+  ];
+  const hash = await bcrypt.hash("counselor123", 10);
+  for (const [fullName, email] of roster) {
+    const [ex] = await db.query("SELECT id FROM users WHERE LOWER(email) = LOWER(?)", [email]);
+    if (ex.length > 0) continue;
+    await db.query(
+      `INSERT INTO users (full_name, email, password_hash, role, is_active, email_verified)
+       VALUES (?, ?, ?, 'counselor', 1, 1)`,
+      [fullName, email.toLowerCase(), hash]
+    );
+  }
 }
 
 async function ensureColumn(db, tableName, columnName, addSql) {
@@ -148,6 +201,22 @@ async function ensureColumn(db, tableName, columnName, addSql) {
     [tableName, columnName]
   );
   if (rows[0].total === 0) await db.query(addSql);
+}
+
+async function dropUniqueKeyIfExists(db, tableName, keyName) {
+  const [rows] = await db.query(
+    `SELECT COUNT(*) AS total
+     FROM information_schema.statistics
+     WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?`,
+    [tableName, keyName]
+  );
+  if (rows[0] && rows[0].total > 0) {
+    try {
+      await db.query(`ALTER TABLE \`${tableName}\` DROP INDEX \`${keyName}\``);
+    } catch (_err) {
+      /* ignore — already removed or not droppable */
+    }
+  }
 }
 
 async function ensurePasswordHashNullable(db) {
