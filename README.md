@@ -24,7 +24,7 @@ No manual MySQL Workbench installation is required on the client device.
    - System: `MySQL`
    - Server: `mysql`
    - Username: `gco_user`
-   - Password: `gco_password`
+   - Password: `local_dev_password` (must match `DB_PASSWORD` in your `.env`; see `.env.example`)
    - Database: `gco_appointments`
 
 Stop containers:
